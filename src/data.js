@@ -18,13 +18,13 @@ export const MODES = [
   },
   {
     id: 'quest', name: 'Quest',
-    desc: 'Start with a wooden sword and no powers. Find the temple in each dimension to earn its power. Beat each boss to unlock the next portal.',
+    desc: 'Start with a wooden sword and no powers. Win every power move in the temple trials, and beat each world\'s boss for the key to the next portal.',
     flying: false, invincible: false, allPowers: false, allPortals: false, building: false, startSword: 0, startArmor: 0,
   },
   {
     id: 'hero', name: 'Hero',
-    desc: 'You already have all 9 powers and every portal is open, but you still have health and must defeat all 9 bosses.',
-    flying: false, invincible: false, allPowers: true, allPortals: true, building: false, startSword: 0, startArmor: 0,
+    desc: 'Every portal is open, so you can go to any world you like - but you still have to fight for every single power move.',
+    flying: false, invincible: false, allPowers: false, allPortals: true, building: false, startSword: 0, startArmor: 0,
   },
 ];
 
@@ -57,7 +57,9 @@ export const POWERS = [
 // ---------------------------------------------------------------- power moves (2026-11-18)
 // Every power (element) has 9 MOVES. Each of the element's 3 temples gives 3 of them:
 //   temple tier 0 -> moves 0,1,2   tier 1 -> moves 3,4,5   tier 2 -> moves 6,7,8 (move 8 = the SUPER).
-// A hero's OWN element (CHARACTERS[i].power) has moves 0,1,2 from the start, for that hero.
+// FIGHT FOR EVERY MOVE (2026-11-19): outside Creative, every single move is won in its own fight - each temple
+// runs 3 TRIALS in its courtyard, one per move (see TRIALS below). Nothing is free, not even the hero's own
+// element; a hero's OWN element (CHARACTERS[i].power) is just stronger for them (OWN_POWER_BONUS).
 // Controls (see CONTROLS below): "use power" uses the selected move; "next move" / 1-9 pick the move;
 // "next power" switches element; HOLD "use power" ~0.7 s and let go = the element's SUPER (if earned).
 // mana / cooldown (s) / damage are per move; damage is a base value the game scales with level.
@@ -167,6 +169,16 @@ export const POWER_ATTACKS = [
 ];
 POWER_ATTACKS.forEach((moves) => moves.forEach((m, j) => { m.tier = Math.floor(j / 3); m.isSuper = j === 8; }));
 export const MOVES_PER_POWER = 9;
+// The 3 trials at every temple (tier t). Winning trial k gives move 3t+k of that world's element.
+//   0 'wave'     - a wave of this world's monsters appears in the courtyard; beat them all.
+//   1 'champion' - one huge champion monster (this world's enemy, scaled up, glowing in the element colour).
+//   2 'guardian' - the temple guardian boss (DIMENSIONS[i].temples[t].boss). Beating it opens the temple;
+//                  the move is given when you take the crystal from the table inside.
+export const TRIALS = [
+  { kind: 'wave',     name: 'Monster Wave', count: [4, 6, 8],  hpMul: 1.0, desc: 'Beat every monster in the wave.' },
+  { kind: 'champion', name: 'Champion',     count: [1, 1, 1],  hpMul: 2.5, desc: 'Beat the giant champion.' },
+  { kind: 'guardian', name: 'Guardian',     count: [1, 1, 1],  hpMul: 1.0, desc: 'Beat the temple guardian, then take the crystal.' },
+];
 // The power a hero uses MORE STRONGLY: +25% damage and 25% less mana when the hero uses their own element.
 export const OWN_POWER_BONUS = { damage: 1.25, mana: 0.75 };
 

@@ -143,6 +143,24 @@ export class Enemies {
     return e;
   }
 
+  // temple trial monsters: they hunt the players in the courtyard and only exist during the trial
+  spawnTrial(def, pos, { hpMul = 1, sizeMul = 1, dmgMul = 1, name = null, tint = null } = {}) {
+    const dim = this.dim || DIMENSIONS[0];
+    const sc = enemyScale(dim.level);
+    const d = { ...def, size: (def.size || 1) * sizeMul };
+    const e = this.add({
+      kind: 'trial', trial: true, def: d, name: name || def.name, pos,
+      hp: def.hp * sc.hp * hpMul, dmg: def.dmg * sc.dmg * dmgMul, speed: def.speed * (sizeMul > 1 ? 0.85 : 1), coins: def.coins * sc.coins * (hpMul > 1 ? 4 : 1),
+      xp: Math.round((6 + def.hp * sc.hp * 0.12) * Math.max(1, hpMul * 0.6)), loot: def.loot, isDark: !!dim.biome.alwaysNight,
+    });
+    if (!e) return null;
+    e.noticed = true; e.state = 'chase';
+    if (tint) { e.baseTint = tint; this.untint(e); }
+    this.game.fx.sparkles(pos.clone().setY(pos.y + 1), tint || '#ff6a6a', 24, 3);
+    this.game.fx.dust(pos, '#8a7a62', 10, 1.4);
+    return e;
+  }
+
   add(o) {
     const q = this.game.settings.quality;
     let rig;
@@ -312,7 +330,7 @@ export class Enemies {
       const frozen = e.frozenT > 0;
       if (e.fearT > 0) {   // Nightmare: run away from the player
         e.fearT -= edt;
-        if (e.state === 'attack') { e.attack = null; e.rig.setTint && e.rig.setTint(null); }
+        if (e.state === 'attack') { e.attack = null; this.untint(e); }
         e.state = 'chase';
         if (!frozen && !(e.rootedT > 0) && !(e.stunT > 0) && d > 0.01) {
           e.vel.x += (-dx / d * e.speed - e.vel.x) * Math.min(1, edt * 8);
@@ -333,8 +351,8 @@ export class Enemies {
       }
 
       // AI
-      const notice = e.kind === 'night' ? 999 : 18 * stealth;
-      const leash = e.kind === 'bandit' ? 45 : e.kind === 'minion' ? 999 : 60;
+      const notice = e.kind === 'night' || e.trial ? 999 : 18 * stealth;
+      const leash = e.trial ? 999 : e.kind === 'bandit' ? 45 : e.kind === 'minion' ? 999 : 60;
       const homeD = Math.hypot(e.pos.x - e.home.x, e.pos.z - e.home.z);
       let mvx = 0, mvz = 0, spd = 0;
       e.stateT -= edt;
@@ -376,7 +394,7 @@ export class Enemies {
             e.yaw = angleDamp(e.yaw, yawTo(e.pos.x, e.pos.z, p.pos.x, p.pos.z), 6, edt);
             if (!a.done && a.t >= a.hit) {
               a.done = true;
-              e.rig.setTint && e.rig.setTint(null);
+              this.untint(e);
               const fx = Math.sin(e.yaw), fz = Math.cos(e.yaw);
               const dot = d > 0.01 ? (dx * fx + dz * fz) / d : 1;
               if (d < a.reach + 0.7 && dot > 0.2 && Math.abs(p.pos.y - e.pos.y) < 2.5 && !p.dead) {
@@ -464,13 +482,14 @@ export class Enemies {
   }
 
   // status helpers used by powers
-  freeze(e, t) { if (!e.alive) return; if (e.isBoss) return this.game.boss.freeze(e, t); e.frozenT = Math.max(e.frozenT, t); e.rig.setFrozen(true); e.attack = null; if (e.state === 'attack') e.state = 'chase'; e.rig.setTint && e.rig.setTint(null); }
+  freeze(e, t) { if (!e.alive) return; if (e.isBoss) return this.game.boss.freeze(e, t); e.frozenT = Math.max(e.frozenT, t); e.rig.setFrozen(true); e.attack = null; if (e.state === 'attack') e.state = 'chase'; this.untint(e); }
   root(e, t) { if (!e.alive) return; if (e.isBoss) { e.rootedT = Math.max(e.rootedT || 0, t * 0.5); return; } e.rootedT = Math.max(e.rootedT, t); }
   burn(e, t, dps) { if (!e.alive) return; e.burnT = Math.max(e.burnT || 0, t); e.burnDps = Math.max(e.burnDps || 0, dps); e.burnTick = e.burnTick || 0; }
   pullTo(e, pos, t) { if (!e.alive || e.isBoss) return; e.pull = pos.clone(); e.pullT = t; }
   slow(e, t, k = 0.45) { if (!e.alive || e.isBoss) return; e.slowT = Math.max(e.slowT || 0, t); e.slowK = Math.min(e.slowK || 1, k); }
-  stun(e, t) { if (!e.alive) return; if (e.isBoss) { e.rootedT = Math.max(e.rootedT || 0, 0.4); return; } e.stunT = Math.max(e.stunT || 0, t); if (e.state === 'attack') { e.attack = null; e.state = 'chase'; e.rig.setTint && e.rig.setTint(null); } }
+  stun(e, t) { if (!e.alive) return; if (e.isBoss) { e.rootedT = Math.max(e.rootedT || 0, 0.4); return; } e.stunT = Math.max(e.stunT || 0, t); if (e.state === 'attack') { e.attack = null; e.state = 'chase'; this.untint(e); } }
   lift(e, v) { if (!e.alive || e.isBoss) return; e.airV = Math.max(e.airV || 0, v); e.airY = Math.max(e.airY || 0, 0.05); }
+  untint(e) { if (e.rig && e.rig.setTint) e.rig.setTint(e.baseTint || null); }
   fear(e, t) { if (!e.alive || e.isBoss) return; e.fearT = Math.max(e.fearT || 0, t); }
 
   nearest(pos, maxD, filter) {

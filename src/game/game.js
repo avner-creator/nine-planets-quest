@@ -2,7 +2,7 @@
 // temples + crystals + portal keys, interactions, saving.
 import * as THREE from 'three';
 import {
-  MODES, DAY_NIGHT, isNight, POWERS, SWORDS, ARMORS, POTIONS, BLOCKS, CHARACTERS, DIMENSIONS, HOME, POWER_ATTACKS,
+  MODES, DAY_NIGHT, isNight, POWERS, SWORDS, ARMORS, POTIONS, BLOCKS, CHARACTERS, DIMENSIONS, HOME, POWER_ATTACKS, TRIALS,
 } from '../data.js';
 import { loadModules, buildWorld, using, createHero } from './modules.js';
 import { Input } from './input.js';
@@ -15,6 +15,7 @@ import { Enemies } from './enemies.js';
 import { BossManager } from './boss.js';
 import { Powers, ROMAN } from './powers.js';
 import { Allies } from './allies.js';
+import { Trials } from './trials.js';
 import { Blocks } from './blocks.js';
 import { NPCs } from './npcs.js';
 import { HUD } from './hud.js';
@@ -81,6 +82,7 @@ export class Game {
     this.boss = new BossManager(this);
     this.powers = new Powers(this);
     this.allies = new Allies(this);
+    this.trials = new Trials(this);
     this.blocks = new Blocks(this);
     this.npcs = new NPCs(this);
 
@@ -241,8 +243,9 @@ export class Game {
       this.hud.hint(`Press ${k('sword')} to swing your sword. ${k('power')} uses your power - HOLD it for a SUPER!`, 7);
       this.hud.hint(`${k('nextMove')} picks the next move, ${k('nextPower')} the next power. ${k('hero')} picks a hero.`, 6);
       if (this.mode.id === 'creative') this.hud.hint('Hold Space to fly up, Left Shift to fly down. Press B to build with blocks!', 7);
-      else if (this.mode.id === 'quest') this.hud.hint('Follow the yellow arrow. Beat temple guardians for crystals, and key guardians for portal keys!', 7);
-      else this.hud.hint('You know every power move! Beat the key guardians to open the portals.', 6);
+      else this.hud.hint('You start with NO power moves. Walk into a temple courtyard to start a trial - every trial you win gives you a new move!', 8);
+      if (this.mode.id === 'quest') this.hud.hint("Follow the yellow arrow. Beat each world's big boss for the key to the next portal.", 7);
+      else if (this.mode.id === 'hero') this.hud.hint('Every portal is open - go to any world you like and win its trials!', 6);
       // the keys card no longer pops up by itself: it only shows with Alt + F5
       this.hud.hint('Press Alt + F5 any time to see all the keys.', 6);
     }
@@ -276,6 +279,7 @@ export class Game {
     this.enemies.clear();
     this.boss.clear();
     this.allies.clear();
+    this.trials.clear();
     this.npcs.clear();
     this.powers.clear();
     this.fx.clearWorld();
@@ -298,7 +302,7 @@ export class Game {
     if (this.worldId === 'home') {
       for (let i = 0; i < 9; i++) {
         w.setPortalState(i, this.portalState(i));
-        w.setCrystals(i, this.mode.id === 'quest' ? s.crystals[i].filter(Boolean).length : 3);
+        w.setCrystals(i, this.mode.id === 'creative' ? 3 : s.crystals[i].filter(Boolean).length);
       }
     } else {
       for (let t = 0; t < 3; t++) this.setTemple(t, this.templeState(t));
@@ -363,14 +367,13 @@ export class Game {
     const s = this.state;
     if (!s || i === 'home') return 'claimed';
     if (this.mode.id === 'creative') return 'claimed';
-    if (this.mode.id === 'quest') return s.crystals[i][t] ? 'claimed' : s.guardians[i][t] ? 'open' : 'sealed';
-    return s.guardians[i][t] ? 'claimed' : 'sealed';
+    return s.crystals[i][t] ? 'claimed' : (s.trials[i][t] >= 3 || s.guardians[i][t]) ? 'open' : 'sealed';
   }
   portalState(i) {
     const s = this.state;
     if (!s) return 'open';
     if (s.bosses[i]) return 'cleared';
-    if (this.mode.id === 'creative' || s.portalsOpen[i] || i === 0) return 'open';
+    if (this.mode.id === 'creative' || this.mode.allPortals || s.portalsOpen[i] || i === 0) return 'open';
     return 'locked';
   }
 
@@ -466,7 +469,7 @@ export class Game {
         }
         if (st === 'sealed' && (dd < 6 || da < 6) && (t.v2 || !ts.some((o) => this.templeState(o.tier) === 'open'))) {
           const gdef = DIMENSIONS[i].temples[t.tier].boss;
-          if (!seen.has('sealed' + key)) { seen.add('sealed' + key); out.push({ d: Math.min(dd, da) + t.tier * 0.01, text: `Sealed! Beat <b>${gdef.name}</b> in the courtyard to open the ${t.name}.`, act: null }); }
+          if (!seen.has('sealed' + key)) { seen.add('sealed' + key); out.push({ d: Math.min(dd, da) + t.tier * 0.01, text: `Sealed! Win the 3 trials in its courtyard (the last one is <b>${gdef.name}</b>) to open the ${t.name}.`, act: null }); }
         }
       });
     }
@@ -676,19 +679,26 @@ export class Game {
   onGuardianDefeated(i, t) {
     const s = this.state, D = DIMENSIONS[i], tp = D.temples[t];
     s.guardians[i][t] = true;
+    s.trials[i][t] = 3;
+    this.trials.onGuardianWon(i, t);
     this.audio.play('bossDefeated');
-    this.hud.banner(`${tp.boss.name} beaten!`, `The ${tp.name} is open!`, POWERS[i].color, 3.5);
+    this.hud.banner(`${tp.boss.name} beaten!`, `Trial 3 won! The ${tp.name} is open!`, POWERS[i].color, 3.5);
     this.celebrate();
     this.setTemple(t, this.templeState(t));
-    if (this.mode.id === 'quest') setTimeout(() => this.hud.toast(`Go into the ${tp.name} and take the crystal (${this.player.ctl.key('use')}).`, 'good', 5), 1800);
+    if (this.mode.id !== 'creative') setTimeout(() => this.hud.toast(`Go into the ${tp.name} and take the crystal (${this.player.ctl.key('use')}) for ${POWER_ATTACKS[i][3 * t + 2].name}!`, 'good', 5), 1800);
     this.saveNow();
+  }
+  // a trial gave a new move: players who have nothing usable selected get it ready
+  onMoveWon(el, m) {
+    this.players.forEach((p) => { if (!this.powers.canUse(p, p.sel.power, p.sel.move)) { p.sel.power = el; p.sel.move = m; } });
+    this.hud.refreshHotbar();
   }
   onKeyGuardianDefeated(i, pos) {
     const s = this.state, d = DIMENSIONS[i];
     s.bosses[i] = true;
     this.audio.play('bossDefeated');
     this.celebrate();
-    if (d.keyFor != null && !s.keys[d.keyFor] && !s.portalsOpen[d.keyFor]) {
+    if (this.mode.id === 'quest' && d.keyFor != null && !s.keys[d.keyFor] && !s.portalsOpen[d.keyFor]) {
       s.keysDropped[i] = true;
       pos.y = this.world.heightAt(pos.x, pos.z);
       this.fx.dropKey(pos, d.keyFor, POWERS[d.keyFor].color);
@@ -704,7 +714,8 @@ export class Game {
     const s = this.state, pw = POWERS[el];
     if (s.crystals[el][t]) return;
     s.crystals[el][t] = true;
-    const moves = POWER_ATTACKS[el].slice(3 * t, 3 * t + 3).map((m) => m.name);
+    s.moves[el][3 * t + 2] = true;     // the crystal gives the temple's 3rd move (trial 3)
+    const moves = [POWER_ATTACKS[el][3 * t + 2].name];
     this.cinematic = 4;
     this.audio.play('temple');
     p.cam.orbit = { center: p.pos.clone(), radius: 6, height: 2.5, speed: 0.7, angle: p.yaw + Math.PI, lookY: 1.2 };
@@ -720,13 +731,13 @@ export class Game {
     }, () => { beamGeo.dispose(); mat.dispose(); this.fx.releaseLight(L); });
     this.fx.ground.spawn(this.world, { shape: 'circle', pos: p.pos, radius: 4, color: pw.color, duration: 4, mode: 'glow' });
     setTimeout(() => {
-      this.hud.banner(`You got the Crystal of ${pw.name} ${ROMAN[t]}!`, `New moves: ${moves.join(', ')}`, pw.color, 5);
+      this.hud.banner(`You got the Crystal of ${pw.name} ${ROMAN[t]}!`, `New move: ${moves[0]}`, pw.color, 5);
       this.hud.screenFlash(pw.color, 0.5);
       this.fx.sparkles(p.pos.clone().setY(p.pos.y + 1.2), pw.color, 90, 7);
     }, 900);
     this.setTemple(t, 'claimed');
     // the player who took it gets the first new move ready
-    p.sel.power = el; p.sel.move = 3 * t;
+    this.players.forEach((q) => { if (q === p || !this.powers.canUse(q, q.sel.power, q.sel.move)) { q.sel.power = el; q.sel.move = 3 * t + 2; } });
     this.powers.onSelect && this.powers.onSelect(p);
     this.hud.refreshHotbar();
     this.saveNow();
@@ -734,7 +745,7 @@ export class Game {
       this.cinematic = 0;
       p.cam.orbit = null;
       p.cam.snapBehind(p.yaw);
-      this.hud.toast(`Every hero can use the new ${pw.name} moves now! ${p.ctl.key('nextMove')} picks a move, ${p.ctl.key('power')} uses it.`, 'info', 5);
+      this.hud.toast(`Every hero can use ${moves[0]} now! ${p.ctl.key('nextMove')} picks a move, ${p.ctl.key('power')} uses it.`, 'info', 5);
     }, 4200);
   }
 
@@ -743,13 +754,15 @@ export class Game {
     if (i === p.charIndex) return;
     p.setCharacter(i, true);
     const own = CHARACTERS[i].power;
-    p.sel.power = own; p.sel.move = 0;
+    if (this.powers.elementUsable(p, own)) { p.sel.power = own; p.sel.move = [...Array(9).keys()].find((m) => this.powers.canUse(p, own, m)) || 0; }
+    else if (!this.powers.elementUsable(p, p.sel.power)) { p.sel.power = own; p.sel.move = 0; }
     this.powers.cancelCharge(p);
     this.hud.refreshHotbar();
     this.fx.sparkles(p.pos.clone().setY(p.pos.y + 1), POWERS[own].color, 40, 4);
     this.audio.play('portal', { volume: 0.5, pitch: 1.5 });
     const his = ['bram', 'leo', 'rex', 'zane'].includes(CHARACTERS[i].id) ? 'his' : 'her';
-    this.hud.toastFor(p, `You are now ${CHARACTERS[i].name} - ${his} power is <b style="color:${POWERS[own].color}">${POWERS[own].name}</b>!`, 'good', 3);
+    this.hud.toastFor(p, `You are now ${CHARACTERS[i].name}! Power: <b style="color:${POWERS[own].color}">${POWERS[own].name}</b> - stronger when ${CHARACTERS[i].name} uses it`, 'good', 3.5);
+    void his;
     this.saveNow();
   }
 
@@ -770,7 +783,8 @@ export class Game {
   nextPower(p) {
     const owned = [];
     for (let i = 0; i < 9; i++) if (this.powers.elementUsable(p, i)) owned.push(i);
-    if (owned.length <= 1) { this.hud.toastFor(p, `${POWERS[p.sel.power].name} is your only power so far. Temple crystals give you more!`, 'info', 2.5); return; }
+    if (!owned.length) { this.hud.toastFor(p, 'You have no power moves yet. Win them in the temple trials!', 'info', 2.5); return; }
+    if (owned.length === 1 && owned[0] === p.sel.power) { this.hud.toastFor(p, `${POWERS[p.sel.power].name} is your only power so far. Win temple trials in other worlds for more!`, 'info', 2.5); return; }
     const cur = owned.indexOf(p.sel.power);
     const el = owned[(cur + 1) % owned.length];
     p.sel.power = el;
@@ -790,15 +804,21 @@ export class Game {
     if (night && L.bed) return { text: 'Night! Go to sleep in the bed', pos: L.bed.pos };
     if (this.mode.id === 'creative') return { text: this.building ? 'Build! F = place, G = remove, R = next block' : 'Press B to build, hold Space to fly', pos: null };
     const col = (i) => `<b style="color:${POWERS[i].color}">${PORTAL_COLOR_NAMES[i]}</b>`;
+    const elName = (i) => `<b style="color:${POWERS[i].color}">${POWERS[i].name}</b>`;
+    const worldDone = (i) => s.trials[i].every((n) => n >= 3) && s.crystals[i].every(Boolean);
     if (id === 'home') {
       const k = s.keys.findIndex(Boolean);
       if (k >= 0) return { text: `Use the <b style="color:${POWERS[k].color}">Key to ${DIMENSIONS[k].name}</b> on its portal`, pos: L.portals[k].pos };
-      // the newest open world that still has work to do
+      if (this.mode.id === 'hero') {
+        // every portal is open: go to the first world that still has trials or a boss
+        const next = [...Array(9).keys()].find((i) => !worldDone(i) || !s.bosses[i]);
+        if (next == null) return { text: 'You won every move and beat every boss! Explore and have fun.', pos: null };
+        return { text: `Go through the ${col(next)} portal to win ${elName(next)} moves`, pos: L.portals[next].pos };
+      }
       let next = -1;
-      for (let i = 8; i >= 0; i--) if (this.portalState(i) !== 'locked' && !s.bosses[i]) { next = i; break; }
+      for (let i = 8; i >= 0; i--) if (this.portalState(i) !== 'locked' && (!s.bosses[i] || !worldDone(i))) { next = i; break; }
       if (next < 0) {
-        const done = s.bosses.every(Boolean);
-        if (done) return { text: 'You beat every key guardian! Explore and have fun.', pos: null };
+        if (s.bosses.every(Boolean)) return { text: 'You beat every key guardian! Explore and have fun.', pos: null };
         const j = s.bosses.findIndex((b, i) => b && this.portalState(i + 1) === 'locked');
         return j >= 0 ? { text: `Get the Key to ${DIMENSIONS[j + 1].name} in ${DIMENSIONS[j].name}`, pos: L.portals[j].pos } : null;
       }
@@ -807,19 +827,19 @@ export class Game {
     const D = DIMENSIONS[id];
     const key = this.fx.pickups.find((pk) => pk.type === 'key');
     if (key) return { text: `Pick up the <b style="color:${key.color}">Key to ${DIMENSIONS[key.keyFor].name}</b>`, pos: key.pos };
-    if (this.mode.id === 'quest') {
-      for (const t of this.temples()) {
-        const st = this.templeState(t.tier);
-        if (st === 'open') return { text: `Take the crystal in the ${t.name}`, pos: t.altar };
-        if (st === 'sealed') return { text: `Beat <b>${D.temples[t.tier].boss.name}</b> to open the ${t.name}`, pos: t.courtyard ? t.courtyard.pos : t.pos };
-      }
+    // the next unfinished trial in this world (any order works, this is just a suggestion)
+    const cur = this.trials.cur;
+    if (cur) { const t = this.temples()[cur.tier]; return { text: `${TRIALS[cur.k].name} at the ${t.name}: win ${POWER_ATTACKS[id][3 * cur.tier + cur.k].name}!`, pos: null }; }
+    for (const t of this.temples()) {
+      const n = s.trials[id][t.tier];
+      if (n < 3) return { text: `Win the ${TRIALS[n].name} at the ${t.name} for ${elName(id)}: ${POWER_ATTACKS[id][3 * t.tier + n].name}`, pos: t.courtyard ? t.courtyard.pos : t.pos };
+      if (!s.crystals[id][t.tier]) return { text: `Take the crystal in the ${t.name} for ${POWER_ATTACKS[id][3 * t.tier + 2].name}`, pos: t.altar };
     }
-    if (!s.bosses[id]) return { text: D.keyFor != null ? `Beat <b>${D.boss.name}</b> for the Key to ${DIMENSIONS[D.keyFor].name}` : `Beat <b>${D.boss.name}</b>, the final boss!`, pos: L.bossArena ? L.bossArena.pos : null };
+    if (!s.bosses[id]) {
+      if (this.mode.id === 'quest' && D.keyFor != null) return { text: `Beat <b>${D.boss.name}</b> for the Key to ${DIMENSIONS[D.keyFor].name}`, pos: L.bossArena ? L.bossArena.pos : null };
+      return { text: `Beat <b>${D.boss.name}</b>${D.keyFor == null ? ', the final boss!' : ''}`, pos: L.bossArena ? L.bossArena.pos : null };
+    }
     if (D.keyFor != null && s.keys[D.keyFor]) return { text: 'Take the key home through the portal', pos: L.homePortal ? L.homePortal.pos : null };
-    if (this.mode.id === 'hero') {
-      const g = s.guardians[id].findIndex((b) => !b);
-      if (g >= 0) { const t = this.temples()[g]; return { text: `Beat <b>${D.temples[g].boss.name}</b> (bonus boss)`, pos: t && t.courtyard ? t.courtyard.pos : null }; }
-    }
     return { text: 'Go home through the portal', pos: L.homePortal ? L.homePortal.pos : null };
   }
 
@@ -949,7 +969,7 @@ export class Game {
         return true;
       }
       case 'F7':
-        s.portalsOpen = Array(9).fill(true); s.crystals = s.crystals.map(() => [true, true, true]);
+        s.portalsOpen = Array(9).fill(true); s.crystals = s.crystals.map(() => [true, true, true]); s.moves = s.moves.map((r) => r.map(() => true)); s.trials = s.trials.map(() => [3, 3, 3]); s.guardians = s.guardians.map(() => [true, true, true]);
         if (this.worldId === 'home') for (let i = 0; i < 9; i++) { this.world.setPortalState(i, this.portalState(i)); this.world.setCrystals(i, 3); }
         else for (let t = 0; t < 3; t++) this.setTemple(t, this.templeState(t));
         this.hud.refreshHotbar(); this.hud.toast('[debug] everything unlocked', 'info', 1.5); return true;
@@ -963,6 +983,7 @@ export class Game {
         this.hud.toast(`[debug] courtyard of the ${ts[this.dbgTemple].name}`, 'info', 1.5);
         return true;
       }
+      case 'F10': this.trials.winNow(); return true;
       case 'F9': {   // give the key
         let k = this.worldId !== 'home' ? DIMENSIONS[this.worldId].keyFor : s.portalsOpen.findIndex((o, i) => !o && i > 0);
         if (k == null || k < 0) { this.hud.toast('[debug] no key to give', 'info', 1.5); return true; }
@@ -1125,6 +1146,7 @@ export class Game {
       this.boss.update(dt);
       this.powers.update(dt);
       this.allies.update(dt);
+      this.trials.update(dt);
       this.npcs.update(dt);
       this.blocks.update(dt, this.building && this.canControl(this.blocks.builder || P));
       this.fx.update(dt, this.time);

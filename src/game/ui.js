@@ -167,9 +167,9 @@ export class UI {
     const cards = MODES.map((m) => {
       const s = loadGame(m.id);
       const beaten = s ? s.bosses.filter(Boolean).length : 0;
-      const info = s ? `<div class="save-info">${img(portraitIcon(CHARACTERS[s.character] || CHARACTERS[0]), 'mini')}${s.players === 2 ? img(portraitIcon(CHARACTERS[s.character2] || CHARACTERS[3]), 'mini') : ''} Level ${s.level} - ${beaten} of 9 keys won</div>` : '<div class="save-info empty">New adventure</div>';
+      const info = s ? `<div class="save-info">${img(portraitIcon(CHARACTERS[s.character] || CHARACTERS[0]), 'mini')}${s.players === 2 ? img(portraitIcon(CHARACTERS[s.character2] || CHARACTERS[3]), 'mini') : ''} Level ${s.level} - ${(s.moves || []).flat().filter(Boolean).length} of 81 moves won</div>` : '<div class="save-info empty">New adventure</div>';
       const btns = s ? `<button class="btn big primary" data-cont="${m.id}">Keep playing</button><button class="btn small" data-new="${m.id}">Start over</button>` : `<button class="btn big primary" data-new="${m.id}">Play</button>`;
-      return `<div class="card mode-card mode-${m.id}"><div class="mode-icon">${this.modeIcon(m.id)}</div><h2>${m.name}</h2><p>${this.modeText(m.id)}</p>${info}<div class="card-buttons">${btns}</div></div>`;
+      return `<div class="card mode-card mode-${m.id}"><div class="mode-icon">${this.modeIcon(m.id)}</div><h2>${m.name}</h2><p>${m.desc}</p>${info}<div class="card-buttons">${btns}</div></div>`;
     }).join('');
     const n = this.mount('modes', h(`<div class="screen modes-screen"><h1 class="screen-title">How do you want to play?</h1><div class="mode-cards">${cards}</div><button class="btn back" data-a="back">Back</button></div>`));
     n.querySelector('[data-a=back]').onclick = () => this.showScreen('title');
@@ -397,7 +397,7 @@ export class UI {
     const cur = p.charIndex;
     const side = g.players.length > 1 && p.index === 1 ? 'side right' : 'side';
     const n = this.wrap('switcher', `<h1>Pick a hero</h1>
-      <div class="switch-grid">${CHARACTERS.map((c, i) => `<div class="char-tile ${i === cur ? 'selected' : ''}" data-nav data-i="${i}">${img(portraitIcon(c))}<div><span>${c.name}</span><small>${SHORT_BIO[c.id] || c.title}</small><em class="hero-power" style="color:${POWERS[c.power].color}">${img(powerIcon(POWERS[c.power]), 'pico')}Power: ${POWERS[c.power].name}</em></div></div>`).join('')}</div>
+      <div class="switch-grid">${CHARACTERS.map((c, i) => `<div class="char-tile ${i === cur ? 'selected' : ''}" data-nav data-i="${i}">${img(portraitIcon(c))}<div><span>${c.name}</span><small>${SHORT_BIO[c.id] || c.title}</small><em class="hero-power" style="color:${POWERS[c.power].color}">${img(powerIcon(POWERS[c.power]), 'pico')}Power: ${POWERS[c.power].name} - stronger when ${c.name} uses it</em></div></div>`).join('')}</div>
       <div class="tip">Every hero has their own power. Move to look, press to pick.</div>`, side);
     n.querySelectorAll('.char-tile').forEach((t) => { t.onclick = () => { const i = +t.dataset.i; g.resume(); g.switchCharacter(p, i); }; });
   }

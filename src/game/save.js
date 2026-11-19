@@ -21,7 +21,7 @@ export function newGameState(modeId, character = 0, players = 1) {
   const mode = MODES.find((m) => m.id === modeId) || MODES[1];
   const all = mode.id === 'creative';
   return {
-    v: 2,
+    v: 3,
     mode: mode.id,
     players,
     character,
@@ -33,12 +33,14 @@ export function newGameState(modeId, character = 0, players = 1) {
     armor: mode.startArmor,
     potions: { hp: mode.id === 'quest' ? 2 : 3, hp_big: 0, mana: mode.id === 'quest' ? 1 : 2 },
     loot: {},                               // name -> { count, value }
-    crystals: grid(false),                  // [element][tier] crystal taken (Quest)
+    moves: Array.from({ length: 9 }, () => Array(9).fill(all)),   // [element][move] won (Creative: everything)
+    trials: Array.from({ length: 9 }, () => [0, 0, 0]),           // [dimension][temple] trials won (0..3)
+    crystals: grid(false),                  // [element][tier] crystal taken
     guardians: grid(false),                 // [dimension][temple] temple guardian beaten
     bosses: Array(9).fill(false),           // key guardian (main boss) beaten
     keys: Array(9).fill(false),             // portal keys carried (keys[i] opens portal i)
     keysDropped: Array(9).fill(false),      // key dropped by a boss but not picked up yet (per dimension)
-    portalsOpen: Array(9).fill(false).map((_, i) => i === 0 || all),
+    portalsOpen: Array(9).fill(false).map((_, i) => i === 0 || all || !!mode.allPortals),
     time: DAY_NIGHT.startTime,
     world: 'home',
     pos: null, pos2: null,
@@ -76,6 +78,22 @@ function migrate(s) {
     g.v = 2;
   }
   if (!Array.isArray(g.sel) || g.sel.length < 2) g.sel = base.sel;
+  // v3: every move is won in a temple trial. Old progress: a claimed crystal tier -> its 3 moves,
+  // an old beaten temple guardian -> all 3 trials of that temple done. (Old Hero saves simply start earning moves.)
+  const okMoves = ok9(g.moves) && g.moves.every((r) => Array.isArray(r) && r.length === 9);
+  const okTrials = ok9(g.trials) && g.trials.every((r) => Array.isArray(r) && r.length === 3);
+  if (!okMoves || !okTrials || !s.v || s.v < 3) {
+    if (!okMoves) g.moves = base.moves.map((r) => r.slice());
+    if (!okTrials) g.trials = base.trials.map((r) => r.slice());
+    if (s.mode !== 'hero') g.crystals.forEach((row, el) => row.forEach((has, t) => { if (has) for (let k = 0; k < 3; k++) g.moves[el][3 * t + k] = true; }));
+    else g.crystals = base.crystals;
+    if (s.mode === 'hero') { g.trials = base.trials.map((r) => r.slice()); g.guardians = base.guardians.map((r) => r.slice()); }
+    else g.guardians.forEach((row, i) => row.forEach((beat, t) => { if (beat) { g.trials[i][t] = 3; g.moves[i][3 * t] = true; g.moves[i][3 * t + 1] = true; } }));
+    g.v = 3;
+  }
+  g.moves = g.moves.map((r) => r.map(Boolean));
+  if (g.mode === 'creative') g.moves = g.moves.map((r) => r.map(() => true));
+  if (g.mode === 'hero') g.portalsOpen = Array(9).fill(true);
   g.portalsOpen[0] = true;
   if (g.mode === 'creative') g.portalsOpen = Array(9).fill(true);
   if (g.players !== 2) g.players = 1;

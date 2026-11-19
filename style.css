@@ -457,3 +457,11 @@ input[type=range] { width: 100%; accent-color: var(--gold); }
 .btn { letter-spacing: 0.2px; }
 .bar { box-shadow: 0 2px 8px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.1); }
 .planets i { width: 26px; height: 26px; background-image: radial-gradient(circle at 35% 30%, rgba(255,255,255,0.7), rgba(255,255,255,0) 45%); }
+
+/* ================================================================ v3: temple trials */
+.trial-count { position: absolute; left: 50%; top: 62%; transform: translate(-50%, -50%); font-size: 120px; font-weight: 900; color: #fff; text-shadow: 0 6px 0 rgba(0,0,0,0.5), 0 0 40px rgba(255,211,74,0.9); pointer-events: none; z-index: 6; }
+.trial-count.pop { animation: countpop 0.9s ease-out; }
+@keyframes countpop { 0% { opacity: 0; transform: translate(-50%, -50%) scale(2.2); } 25% { opacity: 1; transform: translate(-50%, -50%) scale(1); } 80% { opacity: 1; } 100% { opacity: 0.2; transform: translate(-50%, -50%) scale(0.85); } }
+.slot.locked .lock { top: 30%; width: 18px; height: 18px; }
+.slot .tmpl { white-space: normal; line-height: 1.05; font-size: 9px; padding: 0 2px; bottom: 2px; }
+.hud.two .slot .tmpl { font-size: 8px; }

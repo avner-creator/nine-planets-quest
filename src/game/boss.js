@@ -40,9 +40,7 @@ export class BossManager {
     const s = g.state, D = DIMENSIONS[id];
     const arena = g.world.landmarks.bossArena;
     if (arena && !s.bosses[id]) this.spawn(D.boss, arena.pos, arena.radius || 22, 'key', -1);
-    g.temples().forEach((t) => {
-      if (!s.guardians[id][t.tier] && t.courtyard) this.spawn(D.temples[t.tier].boss, t.courtyard.pos, t.courtyard.radius || 20, 'guardian', t.tier);
-    });
+    // temple guardians only appear as the 3rd trial of their temple (see trials.js)
   }
   spawn(def, center, arenaR, role, tier) {
     const g = this.game, id = g.worldId;
@@ -64,6 +62,12 @@ export class BossManager {
     return e;
   }
 
+  remove(e) {
+    const i = this.list.indexOf(e);
+    if (i >= 0) this.list.splice(i, 1);
+    if (e.rig) { this.game.fx.sparkles(this._v.set(e.pos.x, e.pos.y + e.height * 0.5, e.pos.z), e.def.accent, 40, 4); this.game.scene.remove(e.rig.root); e.rig.dispose(); e.rig = null; }
+    if (!this.fighting) this.game.audio.setMusicMood(this.game.moodForTime());
+  }
   wake(e) {
     if (e.state === 'fight') return;
     const g = this.game;

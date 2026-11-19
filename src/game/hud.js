@@ -181,7 +181,7 @@ class View {
 
     // move bar cooldowns
     const building = g.building && g.blocks.builder === p;
-    const key = `${p.sel.power}|${p.sel.move}|${p.charIndex}|${building}|${building ? g.blocks.selected : ''}|${s.crystals[p.sel.power].join('')}`;
+    const key = `${p.sel.power}|${p.sel.move}|${p.charIndex}|${building}|${building ? g.blocks.selected : ''}|${s.moves[p.sel.power].join('')}`;
     if (this.barKey !== key) { this.barKey = key; this.refreshBar(); }
     if (!building) {
       for (let i = 0; i < 9; i++) {
@@ -359,14 +359,15 @@ export class HUD {
       <div class="banner hidden"><div class="banner-title"></div><div class="banner-sub"></div></div>
       <div class="hint hidden"></div>
       <div class="help panel hidden"></div>
-      <div class="fade-black hidden"><div class="zzz">Z z z</div></div>`;
+      <div class="fade-black hidden"><div class="zzz">Z z z</div></div>
+      <div class="trial-count hidden"></div>`;
     const q = (s) => root.querySelector(s);
     this.$ = {
       boss: q('.boss-bar'), bossName: q('.boss-name'), bossFill: q('.bar.boss .fill'), bossGhost: q('.bar.boss .ghost'), bossEnrage: q('.boss-enrage'),
       objective: q('.objective'), objText: q('.obj-text'), objArrow: q('.obj-arrow'),
       coins: q('.coins span'), potHp: q('.pot.hp span'), potMp: q('.pot.mana span'), keys: q('.keys'), split: q('.split-line'),
       toasts: q('.toasts'), banner: q('.banner'), bannerTitle: q('.banner-title'), bannerSub: q('.banner-sub'),
-      hint: q('.hint'), help: q('.help'), fade: q('.fade-black'), modeBadge: q('.mode-badge'),
+      hint: q('.hint'), help: q('.help'), fade: q('.fade-black'), count: q('.trial-count'), modeBadge: q('.mode-badge'),
     };
     this.views = [];
     this.boss = null; this.bossGhost = 1;
@@ -438,7 +439,10 @@ export class HUD {
     const g = this.game, L = g.world && g.world.landmarks, out = [];
     if (!L || !g.state) return out;
     if (L.portals) L.portals.forEach((p) => out.push({ x: p.pos.x, z: p.pos.z, kind: 'portal', color: POWERS[p.index].color, locked: g.portalState(p.index) === 'locked', important: false }));
-    if (L.homePortal) out.push({ x: L.homePortal.pos.x, z: L.homePortal.pos.z, kind: 'portal', color: '#e8f0ff', important: true });
+    if (g.worldId !== 'home') g.temples().forEach((t) => {
+      out.push({ x: t.pos.x, z: t.pos.z, kind: 'temple', color: POWERS[g.worldId].color, tier: t.tier, important: true });
+      if (t.courtyard && g.mode.id !== 'creative' && g.state.trials[g.worldId][t.tier] < 3) out.push({ x: t.courtyard.pos.x, z: t.courtyard.pos.z, kind: 'trial', color: POWERS[g.worldId].color, important: true });
+    });
     if (g.worldId !== 'home') g.temples().forEach((t) => out.push({ x: t.pos.x, z: t.pos.z, kind: 'temple', color: POWERS[g.worldId].color, tier: t.tier, important: true }));
     if (L.shop) out.push({ x: L.shop.pos.x, z: L.shop.pos.z, kind: 'shop', important: true });
     if (L.bed) out.push({ x: L.bed.pos.x, z: L.bed.pos.z, kind: 'bed', important: true });
@@ -467,6 +471,12 @@ export class HUD {
         break;
       case 'bed':
         ctx.fillStyle = '#7ab0ff'; ctx.fillRect(-7, -3, 14, 7); ctx.strokeRect(-7, -3, 14, 7); ctx.fillStyle = '#fff'; ctx.fillRect(-6, -2, 4, 4);
+        break;
+      case 'trial':   // a courtyard with trials to win: ring + star
+        ctx.strokeStyle = m.color; ctx.lineWidth = 2.5; ctx.beginPath(); ctx.arc(0, 0, 8, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = '#ffd34a'; ctx.beginPath();
+        for (let k = 0; k < 10; k++) { const r = k % 2 ? 2.4 : 5.5, a = k / 10 * Math.PI * 2 - Math.PI / 2; k ? ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r) : ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r); }
+        ctx.closePath(); ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.lineWidth = 1; ctx.stroke();
         break;
       case 'key':
         ctx.strokeStyle = '#ffd34a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(-3, -3, 4, 0, Math.PI * 2); ctx.moveTo(0, 0); ctx.lineTo(7, 7); ctx.stroke();
@@ -510,6 +520,13 @@ export class HUD {
   }
   damageFlash(p, a) { const v = this.viewOf(p); v.vig = Math.min(1, v.vig + 0.35 + a); }
   fadeBlack(on, zzz = false) { this.$.fade.classList.toggle('hidden', !on); this.$.fade.querySelector('.zzz').style.display = zzz ? 'block' : 'none'; }
+  // big 3-2-1 countdown for temple trials (null hides it)
+  countdown(text) {
+    const c = this.$.count;
+    if (!c) return;
+    if (!text) { c.classList.add('hidden'); return; }
+    c.textContent = text; c.classList.remove('hidden', 'pop'); void c.offsetWidth; c.classList.add('pop');
+  }
   hint(text, dur = 6) { this.hintQueue.push({ text, dur }); }
   damageNumber(pos, amount, type = 'hit', label = null, color = null) { this.views.forEach((v) => v.damageNumber(pos, amount, type, label, color)); }
   refreshHotbar() { this.views.forEach((v) => { v.barKey = null; }); }

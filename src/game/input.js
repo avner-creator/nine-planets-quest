@@ -16,7 +16,7 @@ export class Input {
 
     // F5 is blocked so it never reloads the game (Alt + F5 shows the keys card); Alt is blocked so the browser
     // menu doesn't grab the keyboard after Alt is let go.
-    const PREVENT = new Set(['Tab', 'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'Backquote', 'Slash', 'Quote', 'AltLeft', 'AltRight']);
+    const PREVENT = new Set(['Tab', 'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'F1', 'F2', 'F3', 'F4', 'F5', 'F6', 'F7', 'F8', 'F9', 'F10', 'Backquote', 'Slash', 'Quote', 'AltLeft', 'AltRight']);
     window.addEventListener('keydown', (e) => {
       const tag = (e.target && e.target.tagName) || '';
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;

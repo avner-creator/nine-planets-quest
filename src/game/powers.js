@@ -3,7 +3,7 @@
 // A hero's OWN element has moves 0-2 from the start (and is stronger: OWN_POWER_BONUS).
 // Every player has their own cooldowns / charge state (player.pw), so two players can play at once.
 import * as THREE from 'three';
-import { POWERS, POWER_ATTACKS, OWN_POWER_BONUS, DIMENSIONS } from '../data.js';
+import { POWERS, POWER_ATTACKS, OWN_POWER_BONUS, DIMENSIONS, TRIALS } from '../data.js';
 import { clamp, rand } from './util.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
@@ -41,13 +41,12 @@ export class Powers {
   get player() { return this.caster || this.game.player; }
   scale() { return 1 + 0.08 * ((this.game.state && this.game.state.level) || 1) - 0.08; }
   isOwn(p, el) { return el === p.ownPower; }
+  // outside Creative every move is won in a temple trial (nothing is free, not even the hero's own element)
   canUse(p, el, m) {
     const g = this.game, s = g.state;
     if (!s) return false;
-    if (g.mode.id !== 'quest') return true;            // Creative + Hero: every move
-    const tier = Math.floor(m / 3);
-    if (s.crystals[el][tier]) return true;
-    return tier === 0 && el === p.ownPower;            // own element: moves 0-2 from the start
+    if (g.mode.id === 'creative') return true;
+    return !!(s.moves && s.moves[el] && s.moves[el][m]);
   }
   elementUsable(p, el) { for (let m = 0; m < 9; m++) if (this.canUse(p, el, m)) return true; return false; }
   cost(p, el, m) {
@@ -61,11 +60,12 @@ export class Powers {
   chargeFrac(p) { const w = p.pw; return w.holding && w.chargeOk ? clamp((w.holdT - CHARGE_SHOW) / (CHARGE_TIME - CHARGE_SHOW), 0, 1) : 0; }
   lockText(el, m) {
     const t = Math.floor(m / 3);
-    return `Temple ${t + 1}`;
+    return `${['Shrine', 'Temple', 'Great Temple'][t]} · Trial ${(m % 3) + 1}`;
   }
   lockHelp(el, m) {
-    const t = Math.floor(m / 3), D = DIMENSIONS[el];
-    return `${POWER_ATTACKS[el][m].name} is locked. Get the Crystal of ${POWERS[el].name} ${ROMAN[t]} from the ${D.temples[t].name} in ${D.name}.`;
+    const t = Math.floor(m / 3), k = m % 3, D = DIMENSIONS[el];
+    const how = k < 2 ? `Win Trial ${k + 1} (${TRIALS[k].name})` : 'Beat the guardian in Trial 3 and take the crystal';
+    return `${POWER_ATTACKS[el][m].name} is locked. ${how} at the ${D.temples[t].name} in ${D.name}.`;
   }
   shake(a) { this.game.players.forEach((p) => p.cam.shake(a)); }
 
