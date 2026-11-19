@@ -166,15 +166,15 @@ export class Game {
 
   // ---------------------------------------------------------------- menus -> game
   newGame(modeId, players = 1, difficulty = DEFAULT_DIFFICULTY) { this.startGame(newGameState(modeId, 0, players, difficulty), true); }
-  // Easy / Medium / Hard (saved per game; Creative is always easy)
+  // Easy / Medium / Hard (saved per game; Creative starts on easy but can be changed in the pause menu too)
   get diff() {
     const s = this.state;
-    const id = !s ? DEFAULT_DIFFICULTY : s.mode === 'creative' ? 'easy' : (s.difficulty || DEFAULT_DIFFICULTY);
+    const id = !s ? DEFAULT_DIFFICULTY : (s.difficulty || DEFAULT_DIFFICULTY);
     return DIFFICULTIES.find((d) => d.id === id) || DIFFICULTIES.find((d) => d.id === DEFAULT_DIFFICULTY);
   }
   setDifficulty(id) {
     const s = this.state;
-    if (!s || s.mode === 'creative' || !DIFFICULTIES.some((d) => d.id === id)) return;
+    if (!s || !DIFFICULTIES.some((d) => d.id === id)) return;
     s.difficulty = id;
     this.hud.refreshBadge();
     this.saveNow();

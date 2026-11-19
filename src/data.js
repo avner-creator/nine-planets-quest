@@ -29,7 +29,7 @@ export const MODES = [
 ];
 
 // ---------------------------------------------------------------- difficulty (2026-11-19)
-// Picked when starting a Quest or Hero game (Creative always uses 'easy'); can be changed any time in the pause menu.
+// Picked when starting a Quest or Hero game (Creative starts on 'easy'); can be changed any time in the pause menu, in every mode.
 // Multipliers apply to monsters, bandits, night creatures, champions, guardians and bosses.
 export const DIFFICULTIES = [
   { id: 'easy',   name: 'Easy',   desc: 'Monsters are weaker and hit softly. Great for learning!',

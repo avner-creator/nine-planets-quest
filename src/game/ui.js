@@ -175,7 +175,7 @@ export class UI {
     const cards = MODES.map((m) => {
       const s = loadGame(m.id);
       const beaten = s ? s.bosses.filter(Boolean).length : 0;
-      const info = s ? `<div class="save-info">${img(portraitIcon(CHARACTERS[s.character] || CHARACTERS[0]), 'mini')}${s.players === 2 ? img(portraitIcon(CHARACTERS[s.character2] || CHARACTERS[3]), 'mini') : ''} Level ${s.level} - ${(s.moves || []).flat().filter(Boolean).length} of 81 moves won${m.id !== 'creative' ? ` <b class="diff-chip diff-${s.difficulty || DEFAULT_DIFFICULTY}">${diffName(s.difficulty)}</b>` : ''}</div>` : '<div class="save-info empty">New adventure</div>';
+      const info = s ? `<div class="save-info">${img(portraitIcon(CHARACTERS[s.character] || CHARACTERS[0]), 'mini')}${s.players === 2 ? img(portraitIcon(CHARACTERS[s.character2] || CHARACTERS[3]), 'mini') : ''} Level ${s.level} - ${(s.moves || []).flat().filter(Boolean).length} of 81 moves won <b class="diff-chip diff-${s.difficulty || DEFAULT_DIFFICULTY}">${diffName(s.difficulty)}</b></div>` : '<div class="save-info empty">New adventure</div>';
       const btns = s ? `<button class="btn big primary" data-cont="${m.id}">Keep playing</button><button class="btn small" data-new="${m.id}">Start over</button>` : `<button class="btn big primary" data-new="${m.id}">Play</button>`;
       return `<div class="card mode-card mode-${m.id}"><div class="mode-icon">${this.modeIcon(m.id)}</div><h2>${m.name}</h2><p>${m.desc}</p>${info}<div class="card-buttons">${btns}</div></div>`;
     }).join('');
@@ -270,7 +270,7 @@ export class UI {
 
   render_pause() {
     const g = this.game, D = g.diff;
-    const canDiff = g.state && g.mode && g.mode.id !== 'creative';
+    const canDiff = !!(g.state && g.mode);   // every mode (Creative too: it changes how tough monsters are)
     const n = this.wrap('pause', `<h1>Paused</h1>
       <div class="menu-buttons">
         <button class="btn big primary" data-a="resume">Play</button>

@@ -109,7 +109,6 @@ function migrate(s) {
   if (g.mode === 'creative') g.portalsOpen = Array(9).fill(true);
   if (g.players !== 2) g.players = 1;
   if (!DIFFICULTIES.some((d) => d.id === g.difficulty)) g.difficulty = DEFAULT_DIFFICULTY;
-  if (g.mode === 'creative') g.difficulty = 'easy';
   delete g.powers; delete g.temples; delete g.selectedPower;
   return g;
 }
