@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Audio Test</title>
+<style>
+  body { font: 14px system-ui, sans-serif; background: #15171c; color: #e8e8ea; margin: 16px; }
+  h2 { font-size: 15px; margin: 18px 0 6px; color: #9fd3ff; }
+  button { background: #2a2f3a; color: #fff; border: 1px solid #3c4352; border-radius: 6px; padding: 5px 9px; margin: 2px; cursor: pointer; }
+  button:hover { background: #374052; }
+  button.on { background: #2f6b3f; }
+  label { display: inline-block; margin: 4px 14px 4px 0; }
+  #stats { font: 12px monospace; white-space: pre; background: #0d0f13; padding: 8px; border-radius: 6px; }
+  #errors { font: 12px monospace; color: #ff8a8a; white-space: pre-wrap; }
+  table { border-collapse: collapse; font: 12px monospace; }
+  td, th { padding: 2px 8px; border-bottom: 1px solid #2a2f3a; text-align: right; }
+  td:first-child, th:first-child { text-align: left; }
+  .meter { height: 10px; background: #0d0f13; width: 300px; border-radius: 4px; overflow: hidden; }
+  .meter div { height: 100%; background: #4caf50; width: 0; }
+</style>
+</head>
+<body>
+<h1 style="font-size:18px">GameAudio test</h1>
+<button id="unlock">Unlock audio</button>
+<label>Volume <input id="vol" type="range" min="0" max="1" step="0.01" value="0.8"></label>
+<label>Pitch <input id="pitch" type="range" min="0.5" max="2" step="0.01" value="1"> <span id="pv">1</span></label>
+<label>Pan <input id="pan" type="range" min="-1" max="1" step="0.1" value="0"></label>
+<div class="meter"><div id="meter"></div></div>
+
+<h2>Sounds</h2><div id="sounds"></div>
+<h2>Footsteps</h2><div id="steps"></div>
+<h2>Music</h2><div id="music"></div>
+<h2>Loops</h2><div id="loops"></div>
+<h2>Tests</h2>
+<button id="all">Play every sound (sequence)</button>
+<button id="stress">Stress: 80 sounds at once</button>
+<button id="bad">Bad calls (must not throw)</button>
+<button id="measure">Measure levels (offline)</button>
+<h2>Stats</h2><div id="stats"></div>
+<h2>Errors</h2><div id="errors">none</div>
+<div id="table"></div>
+
+<script type="module">
+import { GameAudio, SOUND_NAMES, LOOP_NAMES } from './audio.js';
+
+const errors = [];
+const errBox = document.getElementById('errors');
+const logErr = (m) => { errors.push(String(m)); errBox.textContent = errors.join('\n'); };
+addEventListener('error', (e) => logErr('error: ' + e.message));
+addEventListener('unhandledrejection', (e) => logErr('rejection: ' + (e.reason && e.reason.message || e.reason)));
+
+const audio = new GameAudio();
+window.audio = audio;
+const $ = (id) => document.getElementById(id);
+const btn = (parent, text, fn) => { const b = document.createElement('button'); b.textContent = text; b.onclick = fn; $(parent).appendChild(b); return b; };
+const opts = () => ({ pitch: +$('pitch').value, pan: +$('pan').value });
+
+// before unlock: everything must be a silent no-op
+audio.play('coin'); audio.setLoop('wind', 0); audio.update(0.016); audio.setVolume(0.5); audio.setMusicMood('menu');
+if (audio.ctx) logErr('AudioContext created before unlock!');
+
+addEventListener('pointerdown', () => audio.unlock(), { capture: true });
+addEventListener('keydown', () => audio.unlock(), { capture: true });
+$('unlock').onclick = () => audio.unlock();
+$('vol').oninput = (e) => audio.setVolume(+e.target.value);
+$('pitch').oninput = (e) => { $('pv').textContent = e.target.value; };
+
+for (const n of SOUND_NAMES) btn('sounds', n, () => audio.play(n, opts()));
+for (const s of ['grass', 'stone', 'snow', 'sand', 'water']) btn('steps', s, () => audio.play('footstep', { ...opts(), surface: s }));
+
+const moodBtns = {};
+for (const m of ['menu', 'day', 'night', 'boss', 'none']) {
+  moodBtns[m] = btn('music', m, () => { audio.setMusicMood(m); for (const k in moodBtns) moodBtns[k].classList.toggle('on', k === m); });
+}
+let musicOn = true;
+const mb = btn('music', 'Music: on', () => { musicOn = !musicOn; audio.setMusic(musicOn); mb.textContent = 'Music: ' + (musicOn ? 'on' : 'off'); });
+
+for (const n of LOOP_NAMES) {
+  const l = document.createElement('label');
+  l.innerHTML = `${n} <input type="range" min="0" max="1" step="0.01" value="0">`;
+  l.querySelector('input').oninput = (e) => audio.setLoop(n, +e.target.value);
+  $('loops').appendChild(l);
+}
+
+$('all').onclick = async () => {
+  for (const n of SOUND_NAMES) { audio.play(n, opts()); await new Promise((r) => setTimeout(r, 350)); }
+};
+$('stress').onclick = () => {
+  for (let i = 0; i < 80; i++) setTimeout(() => audio.play(SOUND_NAMES[(Math.random() * SOUND_NAMES.length) | 0], { pitch: 0.8 + Math.random() * 0.4, pan: Math.random() * 2 - 1 }), i * 5);
+};
+$('bad').onclick = () => {
+  try {
+    audio.play('nope'); audio.play(); audio.play(null, null); audio.play('coin', { volume: NaN, pitch: Infinity, pan: 'x' });
+    audio.play('hit', 5); audio.setLoop('nope', 1); audio.setLoop('fire', NaN); audio.setLoop('fire', -3); audio.setLoop('fire', 0);
+    audio.setVolume('loud'); audio.setVolume(7); audio.setVolume(0.8); audio.setMusicMood('weird'); audio.setMusicMood(); audio.update(NaN); audio.update(-1);
+    audio.unlock(); audio.unlock();
+    logErr('(bad calls: no throw — OK)');
+  } catch (e) { logErr('bad calls threw: ' + e.message); }
+};
+
+// meter on the master output
+let analyser = null, abuf = null;
+function ensureMeter() {
+  if (analyser || !audio.ctx || !audio.master) return;
+  analyser = audio.ctx.createAnalyser(); analyser.fftSize = 1024; abuf = new Float32Array(1024);
+  audio.master.connect(analyser);
+}
+
+let last = performance.now();
+function frame(t) {
+  const dt = (t - last) / 1000; last = t;
+  audio.update(dt);
+  ensureMeter();
+  if (analyser) {
+    analyser.getFloatTimeDomainData(abuf);
+    let pk = 0; for (const x of abuf) pk = Math.max(pk, Math.abs(x));
+    $('meter').style.width = Math.min(100, pk * 100) + '%';
+    $('meter').style.background = pk > 0.95 ? '#e53935' : '#4caf50';
+  }
+  $('stats').textContent = JSON.stringify(audio._stats(), null, 1);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ── offline level measurement (pre-compressor) ──
+const SR = 44100;
+function levels(buf, from = 0) {
+  let pk = 0, sum = 0, n = 0;
+  for (let ch = 0; ch < buf.numberOfChannels; ch++) {
+    const d = buf.getChannelData(ch);
+    for (let i = Math.floor(from * SR); i < d.length; i++) { const x = d[i]; if (Math.abs(x) > pk) pk = Math.abs(x); sum += x * x; n++; }
+  }
+  const db = (x) => (x > 0 ? (20 * Math.log10(x)).toFixed(1) : '-inf');
+  return { peak: db(pk), rms: db(Math.sqrt(sum / Math.max(1, n))), pk };
+}
+async function render(dur, setup, stepEvery = 0) {
+  const off = new OfflineAudioContext(2, Math.floor(SR * dur), SR);
+  const a = new GameAudio(); a._offline = true; a.ctx = off; a._build();
+  a.mix.disconnect(); a.mix.connect(off.destination);
+  setup(a);
+  if (stepEvery) for (let t = stepEvery; t < dur - 0.05; t += stepEvery) off.suspend(t).then(() => { a.update(stepEvery); off.resume(); });
+  a.update(0);
+  const buf = await off.startRendering();
+  return { buf, a };
+}
+$('measure').onclick = async () => {
+  const rows = [];
+  const t0 = performance.now();
+  for (const n of SOUND_NAMES) {
+    const { buf, a } = await render(4, (a) => a.play(n));
+    const L = levels(buf); rows.push([n, L.peak, L.rms, a._stats().voices]);
+  }
+  for (const s of ['grass', 'stone', 'snow', 'sand', 'water']) {
+    const { buf } = await render(1, (a) => a.play('footstep', { surface: s }));
+    const L = levels(buf); rows.push(['footstep:' + s, L.peak, L.rms, '']);
+  }
+  for (const n of LOOP_NAMES) {
+    const { buf } = await render(5, (a) => a.setLoop(n, 1), 0.1);
+    const L = levels(buf, 2); rows.push(['loop:' + n, L.peak, L.rms, '']);
+  }
+  for (const m of ['menu', 'day', 'night', 'boss']) {
+    const { buf, a } = await render(20, (a) => a.setMusicMood(m), 0.1);
+    const L = levels(buf, 4); rows.push(['music:' + m, L.peak, L.rms, a._stats().music]);
+  }
+  $('table').innerHTML = '<h2>Levels (pre-compressor, dBFS) — ' + Math.round(performance.now() - t0) + ' ms</h2><table><tr><th>name</th><th>peak</th><th>rms</th><th>voices</th></tr>' +
+    rows.map((r) => '<tr>' + r.map((c) => '<td>' + c + '</td>').join('') + '</tr>').join('') + '</table>';
+  window.levelRows = rows;
+};
+</script>
+</body>
+</html>

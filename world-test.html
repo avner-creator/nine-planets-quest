@@ -1,0 +1,182 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>World Test</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #000; font: 13px/1.35 system-ui, sans-serif; color: #eee; }
+  #c { display: block; width: 100%; height: 100%; }
+  #ui { position: fixed; top: 8px; left: 8px; background: rgba(10,14,22,.78); padding: 10px 12px; border-radius: 10px; width: 300px; max-height: calc(100% - 36px); overflow: auto; }
+  #ui h1 { font-size: 14px; margin: 0 0 6px; }
+  #ui label { display: block; margin: 6px 0 2px; color: #aab; }
+  #ui select, #ui button, #ui input[type=range] { font: inherit; }
+  #ui button { background: #2b3a55; color: #fff; border: 0; border-radius: 6px; padding: 4px 8px; margin: 2px 2px 2px 0; cursor: pointer; }
+  #ui button:hover { background: #3c5078; }
+  #ui button.on { background: #6a4bd0; }
+  #stats { position: fixed; top: 8px; right: 8px; background: rgba(10,14,22,.78); padding: 8px 10px; border-radius: 8px; font-family: ui-monospace, monospace; white-space: pre; }
+  #help { color: #889; font-size: 12px; margin-top: 8px; }
+  #msg { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,.6); padding: 6px 12px; border-radius: 8px; display: none; }
+  .row { display: flex; gap: 6px; align-items: center; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three/build/three.module.js", "three/addons/": "./vendor/three/examples/jsm/" } }
+</script>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="ui">
+  <h1>World Test</h1>
+  <label>World</label>
+  <select id="world"></select>
+  <label>Quality</label>
+  <div class="row"><button id="qhigh" class="on">high</button><button id="qlow">low</button></div>
+  <label>Time of day <span id="tval"></span></label>
+  <div class="row"><input id="time" type="range" min="0" max="1" step="0.001" value="0.5" style="flex:1"><button id="play">play</button></div>
+  <div class="row"><button data-t="0.5">noon</button><button data-t="0.74">sunset</button><button data-t="0.0">midnight</button><button data-t="0.26">sunrise</button></div>
+  <label>Jump to</label>
+  <div id="jumps"></div>
+  <div id="states"></div>
+  <div id="help">WASD move · Q/E down/up · Shift fast · drag mouse to look · G toggle ground-walk · H hide panel</div>
+</div>
+<div id="stats"></div>
+<div id="msg"></div>
+<script type="module">
+import * as THREE from 'three';
+import { buildWorld } from './src/world/world.js';
+import { DIMENSIONS, HOME } from './src/data.js';
+
+const $ = (id) => document.getElementById(id);
+const canvas = $('c');
+let quality = 'high', renderer = null, world = null, building = false;
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(65, innerWidth / innerHeight, 0.1, 1500);
+camera.rotation.order = 'YXZ';
+let yaw = 0, pitch = -0.1, timeOfDay = 0.5, playing = false, walk = false;
+const keys = {};
+
+function makeRenderer() {
+  if (renderer) { renderer.dispose(); }
+  const c2 = canvas;
+  renderer = new THREE.WebGLRenderer({ canvas: c2, antialias: quality === 'high', powerPreference: 'high-performance' });
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.setPixelRatio(Math.min(devicePixelRatio, quality === 'high' ? 1.5 : 1));
+  renderer.setSize(innerWidth, innerHeight);
+}
+
+const sel = $('world');
+[['home', HOME.name], ...DIMENSIONS.map((d, i) => [String(i), `${i}: ${d.name}`])].forEach(([v, n]) => { const o = document.createElement('option'); o.value = v; o.textContent = n; sel.appendChild(o); });
+const params = new URLSearchParams(location.search);
+if (params.get('world')) sel.value = params.get('world');
+if (params.get('q')) quality = params.get('q');
+if (params.get('t')) timeOfDay = parseFloat(params.get('t'));
+
+function msg(t, ms = 2500) { const m = $('msg'); m.textContent = t; m.style.display = 'block'; clearTimeout(msg.h); if (ms) msg.h = setTimeout(() => (m.style.display = 'none'), ms); }
+
+function placeAt(pos, yawv, back = 10, up = 5) {
+  yaw = yawv ?? yaw;
+  const f = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw));
+  camera.position.copy(pos).addScaledVector(f, -back); camera.position.y = Math.max(camera.position.y, world.heightAt(camera.position.x, camera.position.z)) + up;
+  pitch = -0.18;
+}
+
+async function load() {
+  if (building) return; building = true;
+  const id = sel.value === 'home' ? 'home' : Number(sel.value);
+  if (world) { world.dispose(); world = null; }
+  if (!renderer) makeRenderer();
+  msg('Building ' + sel.options[sel.selectedIndex].text + '…', 0);
+  await new Promise((r) => setTimeout(r, 30));
+  const t0 = performance.now();
+  try {
+    world = await buildWorld(id, { renderer, scene, quality });
+  } catch (e) { console.error(e); msg('Error: ' + e.message, 8000); building = false; return; }
+  const dt = performance.now() - t0;
+  window.world = world; window.scene = scene; window.renderer = renderer; window.camera = camera;
+  world.buildMs = Math.round(dt);
+  msg(`Built in ${Math.round(dt)} ms (${JSON.stringify(world.timings)})`, 6000);
+  console.log('world built', id, Math.round(dt), 'ms', world.timings);
+  world.setTimeOfDay(timeOfDay);
+  const L = world.landmarks;
+  placeAt(L.spawn, L.spawnYaw, 8, 3);
+  // jump buttons
+  const J = $('jumps'); J.innerHTML = '';
+  const jb = (name, pos, y, back = 14, up = 6) => { const bt = document.createElement('button'); bt.textContent = name; bt.onclick = () => placeAt(pos, y, back, up); J.appendChild(bt); };
+  jb('spawn', L.spawn, L.spawnYaw, 8, 3);
+  if (L.shop) jb('shop', L.shop.pos, L.shop.merchantYaw + Math.PI, 12, 4);
+  if (L.bed) jb('bed', L.bed.pos, yaw, 4, 1.8);
+  if (L.temple) { jb('temple', L.temple.pos, yawToward(L.temple.pos), 45, 14); jb('temple door', L.temple.door, yawToward(L.temple.door), 12, 3); jb('altar', L.temple.altar, yawToward(L.temple.altar), 6, 1.5); }
+  if (L.bossArena) jb('boss arena', L.bossArena.pos, yawToward(L.bossArena.pos), 50, 18);
+  if (L.homePortal) jb('home portal', L.homePortal.pos, L.homePortal.yaw + Math.PI, 8, 2.5);
+  if (L.portals) { jb('plaza', L.portals[4].pos, L.portals[4].yaw + Math.PI, 30, 8); L.portals.forEach((p) => jb('P' + p.index, p.pos, p.yaw + Math.PI, 8, 2)); }
+  world.banditCamps.forEach((c, i) => jb('camp ' + (i + 1), c.pos, yawToward(c.pos), 22, 8));
+  jb('overview', new THREE.Vector3(0, world.heightAt(0, 0), 0), yaw, 0, 140);
+  const S = $('states'); S.innerHTML = '';
+  if (L.portals) {
+    const lab = document.createElement('label'); lab.textContent = 'All portals'; S.appendChild(lab);
+    ['locked', 'open', 'cleared'].forEach((s) => { const bt = document.createElement('button'); bt.textContent = s; bt.onclick = () => { for (let i = 0; i < 9; i++) world.setPortalState(i, s); }; S.appendChild(bt); });
+  }
+  if (L.temple) {
+    const lab = document.createElement('label'); lab.textContent = 'Temple'; S.appendChild(lab);
+    ['sealed', 'open', 'claimed'].forEach((s) => { const bt = document.createElement('button'); bt.textContent = s; bt.onclick = () => world.setTempleState(s); S.appendChild(bt); });
+  }
+  world.onThunder = (i) => console.log('thunder', Math.round(i.distance));
+  building = false;
+}
+function yawToward(p) { return Math.atan2(p.x - camera.position.x, p.z - camera.position.z); }
+// test hook: set camera (yaw/pitch in degrees) and optionally time of day
+window.setView = (x, y, z, yawDeg, pitchDeg, t) => { camera.position.set(x, y, z); yaw = yawDeg * Math.PI / 180; pitch = pitchDeg * Math.PI / 180; camera.rotation.set(pitch, yaw + Math.PI, 0); if (t !== undefined) { timeOfDay = t; $('time').value = t; world.setTimeOfDay(t); } const p = new THREE.Vector3(x, world.heightAt(x, z), z); for (let i = 0; i < 3; i++) world.update(0.016, simTime + i * 0.016, p, camera); renderer.render(scene, camera); return 'ok'; };
+
+sel.onchange = load;
+$('qhigh').onclick = () => { quality = 'high'; $('qhigh').classList.add('on'); $('qlow').classList.remove('on'); if (world) { world.dispose(); world = null; } makeRenderer(); load(); };
+$('qlow').onclick = () => { quality = 'low'; $('qlow').classList.add('on'); $('qhigh').classList.remove('on'); if (world) { world.dispose(); world = null; } makeRenderer(); load(); };
+if (quality === 'low') { $('qlow').classList.add('on'); $('qhigh').classList.remove('on'); }
+$('time').oninput = (e) => { timeOfDay = parseFloat(e.target.value); world && world.setTimeOfDay(timeOfDay); };
+$('play').onclick = () => { playing = !playing; $('play').classList.toggle('on', playing); };
+document.querySelectorAll('[data-t]').forEach((b) => (b.onclick = () => { timeOfDay = parseFloat(b.dataset.t); $('time').value = timeOfDay; world && world.setTimeOfDay(timeOfDay); }));
+
+addEventListener('keydown', (e) => { keys[e.code] = true; if (e.code === 'KeyG') { walk = !walk; msg(walk ? 'walking on ground' : 'free fly'); } if (e.code === 'KeyH') { const u = $('ui'); u.style.display = u.style.display === 'none' ? '' : 'none'; } });
+addEventListener('keyup', (e) => { keys[e.code] = false; });
+let drag = false;
+canvas.addEventListener('mousedown', () => (drag = true));
+addEventListener('mouseup', () => (drag = false));
+addEventListener('mousemove', (e) => { if (!drag) return; yaw -= e.movementX * 0.003; pitch = Math.max(-1.5, Math.min(1.5, pitch - e.movementY * 0.003)); });
+addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer && renderer.setSize(innerWidth, innerHeight); });
+
+let last = performance.now(), fpsAcc = 0, fpsN = 0, fps = 0, simTime = 0;
+const player = new THREE.Vector3();
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(0.1, (now - last) / 1000); last = now;
+  fpsAcc += dt; fpsN++; if (fpsAcc > 0.5) { fps = fpsN / fpsAcc; fpsAcc = 0; fpsN = 0; }
+  if (!world || !renderer) return;
+  simTime += dt;
+  const sp = (keys.ShiftLeft || keys.ShiftRight ? 60 : 14) * dt;
+  const f = new THREE.Vector3(Math.sin(yaw), 0, Math.cos(yaw)), r = new THREE.Vector3(-Math.cos(yaw), 0, Math.sin(yaw));
+  if (keys.KeyW) camera.position.addScaledVector(f, sp);
+  if (keys.KeyS) camera.position.addScaledVector(f, -sp);
+  if (keys.KeyA) camera.position.addScaledVector(r, -sp);
+  if (keys.KeyD) camera.position.addScaledVector(r, sp);
+  if (keys.KeyE) camera.position.y += sp;
+  if (keys.KeyQ) camera.position.y -= sp;
+  const gh = world.heightAt(camera.position.x, camera.position.z);
+  if (walk) camera.position.y = gh + 1.7; else camera.position.y = Math.max(camera.position.y, gh + 0.5);
+  camera.rotation.set(pitch, yaw + Math.PI, 0);
+  if (playing) { timeOfDay = (timeOfDay + dt / 60) % 1; $('time').value = timeOfDay; world.setTimeOfDay(timeOfDay); }
+  $('tval').textContent = timeOfDay.toFixed(3);
+  player.set(camera.position.x, gh, camera.position.z);
+  world.update(dt, simTime, player, camera);
+  renderer.render(scene, camera);
+  if (fpsN === 0) {
+    const i = renderer.info;
+    $('stats').textContent = `FPS ${fps.toFixed(0)}\ncalls ${i.render.calls}\ntris ${(i.render.triangles / 1000).toFixed(0)}k\ngeo ${i.memory.geometries} tex ${i.memory.textures}\nprog ${i.programs.length}\nbuild ${world.buildMs} ms\npos ${camera.position.x.toFixed(0)},${camera.position.y.toFixed(0)},${camera.position.z.toFixed(0)}`;
+  }
+}
+requestAnimationFrame(frame);
+load();
+</script>
+</body>
+</html>

@@ -1,0 +1,354 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Nine Planets Quest - Model Gallery</title>
+<style>
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #1b2230; font: 13px/1.35 system-ui, Segoe UI, sans-serif; color: #e8edf5; }
+  #ui { position: absolute; left: 8px; top: 8px; width: 300px; max-height: calc(100% - 16px); overflow-y: auto; background: rgba(16, 20, 30, 0.86); border-radius: 10px; padding: 10px 12px; box-sizing: border-box; }
+  #ui h1 { font-size: 15px; margin: 0 0 8px; }
+  #ui label { display: block; margin: 6px 0 2px; color: #a9b6c9; font-size: 12px; }
+  select, input[type=range] { width: 100%; box-sizing: border-box; }
+  select { background: #263043; color: #e8edf5; border: 1px solid #3a475e; border-radius: 6px; padding: 4px; }
+  .btns { display: flex; flex-wrap: wrap; gap: 4px; }
+  button { background: #2e3b54; color: #e8edf5; border: 1px solid #44557a; border-radius: 6px; padding: 4px 8px; cursor: pointer; font-size: 12px; }
+  button:hover { background: #3b4c6d; }
+  button.on { background: #4a7a3a; border-color: #6aa050; }
+  #stats { position: absolute; right: 8px; top: 8px; background: rgba(16, 20, 30, 0.8); border-radius: 8px; padding: 6px 10px; font: 12px/1.4 ui-monospace, Consolas, monospace; white-space: pre; }
+  #err { position: absolute; left: 320px; bottom: 8px; right: 8px; color: #ffb0b0; font: 12px ui-monospace, monospace; white-space: pre-wrap; }
+  .row { display: flex; gap: 6px; align-items: center; }
+  .row > * { flex: 1; }
+</style>
+<script type="importmap">
+{ "imports": { "three": "./vendor/three/build/three.module.js", "three/addons/": "./vendor/three/examples/jsm/" } }
+</script>
+</head>
+<body>
+<div id="ui">
+  <h1>Model Gallery</h1>
+  <label>Model</label>
+  <select id="model"></select>
+  <div class="row"><div><label>Quality</label><select id="quality"><option>high</option><option>low</option></select></div>
+  <div><label>Count</label><select id="count"><option>1</option><option>9</option><option>30</option></select></div></div>
+  <div id="poses"><label>Pose</label><div class="btns" id="poseBtns"></div></div>
+  <div id="actions"><label>Actions</label><div class="btns" id="actBtns"></div></div>
+  <div id="castsBox"><label>Cast power</label><div class="btns" id="castBtns"></div></div>
+  <div id="gear">
+    <label>Sword</label><select id="sword"></select>
+    <label>Armour</label><select id="armor"></select>
+  </div>
+  <label>Move speed: <span id="spdv">0</span> m/s</label>
+  <input type="range" id="speed" min="0" max="12" step="0.1" value="0">
+  <div class="btns" style="margin-top:6px">
+    <button id="walkAround">Walk in circle</button>
+    <button id="frozen">Frozen</button>
+    <button id="tint">Burn tint</button>
+    <button id="enraged">Enraged</button>
+    <button id="slow">Slow-mo</button>
+    <button id="night">Night light</button>
+  </div>
+  <label>Info</label>
+  <div id="info" style="font-size:12px;color:#c8d2e2"></div>
+</div>
+<div id="stats"></div>
+<div id="err"></div>
+<script type="module">
+import * as THREE from 'three';
+import { CHARACTERS, DIMENSIONS, NIGHT_CREATURES, SWORDS, ARMORS, POWERS } from './src/data.js';
+
+const errEl = document.getElementById('err');
+const logErr = (e) => { console.error(e); errEl.textContent += (e && e.stack ? e.stack : String(e)) + '\n'; };
+window.addEventListener('error', (e) => logErr(e.error || e.message));
+
+let Characters = {}, Enemies = {}, Bosses = {};
+try { Characters = await import('./src/models/characters.js'); } catch (e) { logErr(e); }
+try { Enemies = await import('./src/models/enemies.js'); } catch (e) { logErr(e); }
+try { Bosses = await import('./src/models/bosses.js'); } catch (e) { logErr(e); }
+
+// ---------------------------------------------------------------- renderer & scene
+const quality0 = new URLSearchParams(location.search).get('q') || 'high';
+const renderer = new THREE.WebGLRenderer({ antialias: quality0 === 'high', powerPreference: 'high-performance' });
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.setPixelRatio(Math.min(devicePixelRatio, quality0 === 'high' ? 1.5 : 1));
+renderer.setSize(innerWidth, innerHeight);
+document.body.prepend(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color('#9cbcd8');
+scene.fog = new THREE.Fog('#9cbcd8', 40, 140);
+const camera = new THREE.PerspectiveCamera(65, innerWidth / innerHeight, 0.1, 1500);
+
+// procedural sky environment for reflections
+{
+  const pm = new THREE.PMREMGenerator(renderer);
+  const env = new THREE.Scene();
+  const g = new THREE.SphereGeometry(10, 32, 16);
+  const c = []; const p = g.attributes.position;
+  for (let i = 0; i < p.count; i++) { const y = p.getY(i) / 10; const col = new THREE.Color().lerpColors(new THREE.Color('#6a5a48'), new THREE.Color('#9cc4ec'), THREE.MathUtils.smoothstep(y, -0.2, 0.3)); c.push(col.r, col.g, col.b); }
+  g.setAttribute('color', new THREE.Float32BufferAttribute(c, 3));
+  env.add(new THREE.Mesh(g, new THREE.MeshBasicMaterial({ side: THREE.BackSide, vertexColors: true })));
+  const sunb = new THREE.Mesh(new THREE.SphereGeometry(1, 8, 8), new THREE.MeshBasicMaterial({ color: new THREE.Color(8, 7, 6) }));
+  sunb.position.set(5, 6, 3); env.add(sunb);
+  scene.environment = pm.fromScene(env, 0.04).texture;
+}
+const hemi = new THREE.HemisphereLight('#cfe2ff', '#5a4a38', 0.9);
+scene.add(hemi);
+const sun = new THREE.DirectionalLight('#fff1d6', 2.6);
+sun.position.set(12, 20, 9);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -14, right: 14, top: 14, bottom: -14, near: 1, far: 70 });
+sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.03;
+scene.add(sun); scene.add(sun.target);
+// ground
+{
+  const cv = document.createElement('canvas'); cv.width = cv.height = 512;
+  const x = cv.getContext('2d');
+  x.fillStyle = '#5b7a3a'; x.fillRect(0, 0, 512, 512);
+  for (let i = 0; i < 9000; i++) { x.fillStyle = `hsl(${85 + Math.random() * 25},${35 + Math.random() * 20}%,${22 + Math.random() * 16}%)`; x.fillRect(Math.random() * 512, Math.random() * 512, 2, 4); }
+  const t = new THREE.CanvasTexture(cv); t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(40, 40); t.colorSpace = THREE.SRGBColorSpace;
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(300, 300), new THREE.MeshStandardMaterial({ map: t, roughness: 0.95 }));
+  ground.rotation.x = -Math.PI / 2; ground.receiveShadow = true; scene.add(ground);
+  const grid = new THREE.GridHelper(20, 20, 0x334422, 0x334422); grid.position.y = 0.002; grid.material.opacity = 0.25; grid.material.transparent = true; scene.add(grid);
+  // 1.8 m reference pole
+  const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1.8), new THREE.MeshStandardMaterial({ color: '#ffcc33' }));
+  pole.position.set(-1.6, 0.9, 0); pole.castShadow = true; scene.add(pole);
+  window.__pole = pole;
+}
+
+// ---------------------------------------------------------------- orbit camera
+const orbit = { target: new THREE.Vector3(0, 1, 0), dist: 4.2, yaw: 0.5, pitch: 0.18 };
+function placeCam() {
+  orbit.pitch = Math.max(-0.2, Math.min(1.45, orbit.pitch));
+  const c = Math.cos(orbit.pitch);
+  camera.position.set(orbit.target.x + Math.sin(orbit.yaw) * c * orbit.dist, orbit.target.y + Math.sin(orbit.pitch) * orbit.dist, orbit.target.z + Math.cos(orbit.yaw) * c * orbit.dist);
+  camera.lookAt(orbit.target);
+}
+let drag = null;
+renderer.domElement.addEventListener('pointerdown', (e) => { drag = { x: e.clientX, y: e.clientY, b: e.button, shift: e.shiftKey }; renderer.domElement.setPointerCapture(e.pointerId); });
+renderer.domElement.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY;
+  if (drag.b === 2 || drag.shift) {
+    const r = new THREE.Vector3().setFromMatrixColumn(camera.matrix, 0), u = new THREE.Vector3(0, 1, 0);
+    orbit.target.addScaledVector(r, -dx * orbit.dist * 0.0015).addScaledVector(u, dy * orbit.dist * 0.0015);
+  } else { orbit.yaw -= dx * 0.008; orbit.pitch += dy * 0.006; }
+});
+renderer.domElement.addEventListener('pointerup', () => (drag = null));
+renderer.domElement.addEventListener('contextmenu', (e) => e.preventDefault());
+renderer.domElement.addEventListener('wheel', (e) => { orbit.dist *= Math.exp(e.deltaY * 0.001); orbit.dist = Math.max(0.4, Math.min(80, orbit.dist)); }, { passive: true });
+addEventListener('resize', () => { renderer.setSize(innerWidth, innerHeight); camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); });
+
+// ---------------------------------------------------------------- model list
+const sel = document.getElementById('model');
+const entries = [];
+function group(label, items) {
+  const og = document.createElement('optgroup'); og.label = label;
+  for (const it of items) { const o = document.createElement('option'); o.value = entries.length; o.textContent = it.name; entries.push(it); og.appendChild(o); }
+  sel.appendChild(og);
+}
+group('Heroes', CHARACTERS.map((c) => ({ name: `${c.name} - ${c.title}`, type: 'hero', def: c })));
+group('NPCs', [
+  { name: 'Merchant', type: 'npc', kind: 'merchant' },
+  ...[1, 2, 3, 4, 5, 6, 7, 8].map((s) => ({ name: `Villager #${s}`, type: 'npc', kind: 'villager', seed: s })),
+  ...DIMENSIONS.map((d, i) => ({ name: `${d.bandit.name} (bandit, ${d.name})`, type: 'npc', kind: 'bandit', outfit: d.bandit.outfit, seed: i + 1 })),
+  ...DIMENSIONS.map((d, i) => ({ name: `${d.bandit.name} Captain (${d.name})`, type: 'npc', kind: 'bandit_captain', outfit: d.bandit.outfit, seed: i + 1 })),
+]);
+DIMENSIONS.forEach((d) => group(`Enemies - ${d.name}`, d.enemies.map((e) => ({ name: `${e.name} (${e.shape})`, type: 'enemy', def: e }))));
+group('Night creatures', NIGHT_CREATURES.map((e) => ({ name: `${e.name} (${e.shape})`, type: 'enemy', def: e })));
+group('Bosses', DIMENSIONS.map((d) => ({ name: `${d.boss.name}, ${d.boss.title} (${d.boss.shape})`, type: 'boss', def: d.boss })));
+DIMENSIONS.forEach((d) => { if (d.temples) group(`Temple guardians - ${d.name}`, d.temples.map((t) => ({ name: `${t.boss.name}, ${t.boss.title} (${t.boss.shape}, ${t.name})`, type: 'boss', def: t.boss }))); });
+group('Friendly summons', [['treant', 'Treant Buddy'], ['golem', 'Rock Golem'], ['golem', 'Snow Golem', '#e8eef4'], ['bird', 'Storm Bird'], ['phoenix', 'Fire Phoenix'], ['skeleton', 'Skeleton Army'], ['spirit', 'Shadow Clone', '#6a4aff']].map(([kind, name, color]) => ({ name: `${name} (summon ${kind})`, type: 'summon', kind, color })));
+
+const swordSel = document.getElementById('sword');
+swordSel.innerHTML = '<option value="-1">(none)</option>' + SWORDS.map((s, i) => `<option value="${i}">${s.name}</option>`).join('');
+const armorSel = document.getElementById('armor');
+armorSel.innerHTML = ARMORS.map((a, i) => `<option value="${i}">${a.name}</option>`).join('');
+swordSel.value = 3;
+
+// ---------------------------------------------------------------- spawning
+let rigs = [], entry = null, walkAround = false, frozen = false, tint = false, enraged = false, slow = false;
+const qualitySel = document.getElementById('quality'); qualitySel.value = quality0;
+const countSel = document.getElementById('count');
+function create(e) {
+  const quality = qualitySel.value;
+  if (e.type === 'hero') return Characters.createHero(e.def, { quality });
+  if (e.type === 'npc') return Characters.createNPC(e.kind, { outfit: e.outfit, seed: e.seed || 1, quality });
+  if (e.type === 'enemy') return Enemies.createEnemy(e.def, { quality });
+  if (e.type === 'boss') return Bosses.createBoss(e.def, { quality });
+  if (e.type === 'summon') return Enemies.createSummon(e.kind, { color: e.color, quality });
+}
+function spawn() {
+  for (const r of rigs) { try { r.dispose(); } catch (e) { logErr(e); } }
+  rigs = [];
+  entry = entries[+sel.value];
+  const n = +countSel.value;
+  const t0 = performance.now();
+  try {
+    for (let i = 0; i < n; i++) {
+      const r = create(entry);
+      if (!r) throw new Error('create returned nothing');
+      const cols = Math.ceil(Math.sqrt(n));
+      const sp = Math.max(1.6, (r.radius || 0.5) * 2.8);
+      r.root.position.set((i % cols - (cols - 1) / 2) * sp, 0, (Math.floor(i / cols) - (cols - 1) / 2) * sp);
+      scene.add(r.root);
+      rigs.push(r);
+    }
+  } catch (e) { logErr(e); }
+  const buildMs = performance.now() - t0;
+  buildUI();
+  applyGear();
+  const r = rigs[0];
+  if (r) {
+    const h = r.height || 1.8;
+    orbit.target.set(0, h * 0.55, 0);
+    orbit.dist = Math.max(2.6, h * 2.3) * (n > 1 ? 2.2 : 1);
+    document.getElementById('info').textContent = `height ${(+h).toFixed(2)} m, radius ${(+r.radius).toFixed(2)}, hitHeight ${r.hitHeight !== undefined ? (+r.hitHeight).toFixed(2) : '-'}; built ${n} in ${buildMs.toFixed(0)} ms` + (r.moves ? `; moves: ${r.moves.join(', ')}` : '');
+  }
+  window.__rigs = rigs;
+}
+function applyGear() {
+  for (const r of rigs) {
+    if (r.setSword && entry.type === 'hero') { const i = +swordSel.value; r.setSword(i < 0 ? null : SWORDS[i]); }
+    if (r.setArmor && entry.type === 'hero') r.setArmor(ARMORS[+armorSel.value]);
+    if (r.setFrozen) r.setFrozen(frozen);
+    if (r.setTint) r.setTint(tint ? (entry.type === 'summon' ? '#7dff8a' : '#ff6a1a') : null);
+    if (r.setEnraged) r.setEnraged(enraged);
+  }
+}
+function btn(parent, label, fn) { const b = document.createElement('button'); b.textContent = label; b.onclick = () => { try { fn(); } catch (e) { logErr(e); } }; parent.appendChild(b); return b; }
+let curPose = 'idle';
+function buildUI() {
+  const pb = document.getElementById('poseBtns'), ab = document.getElementById('actBtns'), cb = document.getElementById('castBtns');
+  pb.innerHTML = ''; ab.innerHTML = ''; cb.innerHTML = '';
+  const human = entry.type === 'hero' || entry.type === 'npc';
+  const poses = human ? ['idle', 'walk', 'run', 'jump', 'fall', 'swim', 'fly', 'sleep', 'dead', 'build'] : ['idle', 'move', 'dead'];
+  for (const p of poses) btn(pb, p, () => { curPose = p; for (const r of rigs) r.setPose(p); if (p === 'walk' || p === 'move') setSpeed(human ? 1.5 : (entry.def.speed || 3)); if (p === 'run') setSpeed(6); if (p === 'idle') setSpeed(0); });
+  document.getElementById('castsBox').style.display = human ? '' : 'none';
+  document.getElementById('gear').style.display = entry.type === 'hero' ? '' : 'none';
+  if (human) {
+    ['attack 0 (slash)', 'attack 1 (backhand)', 'attack 2 (slam)'].forEach((l, i) => btn(ab, l, () => { for (const r of rigs) showTiming(r.attack(i)); }));
+    btn(ab, 'combo 0-1-2', () => { let t = 0; for (const i of [0, 1, 2]) { setTimeout(() => { for (const r of rigs) showTiming(r.attack(i)); }, t * 1000); t += 0.5; } });
+    for (const p of POWERS) btn(cb, p.name, () => { for (const r of rigs) showTiming(r.cast(p.id)); });
+  } else if (entry.type === 'enemy' || entry.type === 'summon') {
+    btn(ab, 'attack', () => { for (const r of rigs) showTiming(r.attack()); });
+  } else if (entry.type === 'boss') {
+    for (const m of rigs[0]?.moves || []) btn(ab, m, () => { for (const r of rigs) showTiming(r.play(m)); });
+  }
+  btn(ab, 'hurt', () => { for (const r of rigs) r.hurt(); });
+}
+const infoT = document.createElement('div'); document.getElementById('info').after(infoT);
+function showTiming(t) { if (t) infoT.textContent = JSON.stringify(t, (k, v) => (typeof v === 'number' ? +v.toFixed(3) : v)); }
+const spd = document.getElementById('speed'), spdv = document.getElementById('spdv');
+function setSpeed(v) { spd.value = v; spdv.textContent = (+v).toFixed(1); for (const r of rigs) r.setMoveSpeed(+v); }
+spd.oninput = () => setSpeed(spd.value);
+sel.onchange = () => { spawn(); curPose = 'idle'; };
+qualitySel.onchange = spawn; countSel.onchange = spawn;
+swordSel.onchange = applyGear; armorSel.onchange = applyGear;
+const tog = (id, fn) => { const b = document.getElementById(id); b.onclick = () => { b.classList.toggle('on'); fn(b.classList.contains('on')); }; };
+tog('walkAround', (v) => { walkAround = v; if (!v) for (const r of rigs) { r.root.position.set(0, 0, 0); r.root.rotation.y = 0; } });
+tog('frozen', (v) => { frozen = v; applyGear(); });
+tog('tint', (v) => { tint = v; applyGear(); });
+tog('enraged', (v) => { enraged = v; applyGear(); });
+tog('slow', (v) => (slow = v));
+tog('night', (v) => { sun.intensity = v ? 0.35 : 2.6; sun.color.set(v ? '#9fb4ff' : '#fff1d6'); hemi.intensity = v ? 0.25 : 0.9; scene.background.set(v ? '#0e1424' : '#9cbcd8'); scene.fog.color.copy(scene.background); renderer.toneMappingExposure = v ? 1.3 : 1; });
+
+sel.value = 0;
+spawn();
+
+// ---------------------------------------------------------------- loop
+const clock = new THREE.Clock();
+const statsEl = document.getElementById('stats');
+let fpsT = 0, frames = 0, fps = 0, ang = 0;
+function loop() {
+  requestAnimationFrame(loop);
+  let dt = Math.min(clock.getDelta(), 0.1);
+  frames++; fpsT += dt; if (fpsT > 0.5) { fps = frames / fpsT; frames = 0; fpsT = 0; }
+  if (slow) dt *= 0.25;
+  if (walkAround && rigs[0]) {
+    const sp = +spd.value || 1.5, R = 3;
+    ang += (sp / R) * dt;
+    rigs[0].root.position.set(Math.cos(ang) * R, 0, Math.sin(ang) * R);
+    rigs[0].root.rotation.y = -ang;
+    orbit.target.lerp(new THREE.Vector3(rigs[0].root.position.x, orbit.target.y, rigs[0].root.position.z), 0.05);
+  }
+  for (const r of rigs) { try { r.update(dt); } catch (e) { logErr(e); rigs = []; } }
+  placeCam();
+  renderer.render(scene, camera);
+  const i = renderer.info.render;
+  statsEl.textContent = `fps ${fps.toFixed(0)}\ndraw calls ${i.calls}\ntriangles ${i.triangles}\ngeometries ${renderer.info.memory.geometries}\ntextures ${renderer.info.memory.textures}`;
+}
+loop();
+// helpers for automated inspection: freeze the loop, step animations deterministically, render
+let paused = false;
+const _loop = loop;
+function frame(dt) { for (const r of rigs) r.update(dt); placeCam(); renderer.render(scene, camera); }
+window.__test = {
+  THREE, scene, renderer, camera, orbit, get rigs() { return rigs; }, spawn, sel, setSpeed, entries, sun, create, placeCam, frame,
+  pick(name) { const i = entries.findIndex((e) => e.name.toLowerCase().includes(name.toLowerCase())); if (i >= 0) { sel.value = i; spawn(); } return i; },
+  // settle a pose then optionally run an action until time t (seconds) and render
+  shot({ pose = 'idle', speed = 0, action = null, arg = 0, t = 0, settle = 1.0, view = null } = {}) {
+    for (const r of rigs) { r.setMoveSpeed(speed); r.setPose(pose); }
+    for (let i = 0; i < settle / 0.02; i++) frame(0.02);
+    let info = null;
+    if (action) for (const r of rigs) info = r[action](arg);
+    for (let x = 0; x < t; x += 0.01) frame(0.01);
+    if (view) Object.assign(orbit, view);
+    frame(0);
+    return info;
+  },
+  // filmstrip: render several moments of an animation into one grid image (for review)
+  strip({ pose = 'idle', speed = 0, action = null, arg = 0, settle = 1.0, view = null, crop = 0.6, walk = 0 } = {}, times = [0, 0.1, 0.2, 0.3, 0.4, 0.5], cols = 3) {
+    let out = document.getElementById('stripCanvas');
+    if (!out) { out = document.createElement('canvas'); out.id = 'stripCanvas'; Object.assign(out.style, { position: 'fixed', left: 0, top: 0, width: '100%', height: '100%', zIndex: 10, background: '#000' }); document.body.appendChild(out); out.onclick = () => (out.style.display = 'none'); }
+    out.width = innerWidth; out.height = innerHeight; out.style.display = '';
+    const g = out.getContext('2d');
+    const rows = Math.ceil(times.length / cols), cw = out.width / cols, ch = out.height / rows;
+    if (view) Object.assign(orbit, view);
+    for (const r of rigs) { r.setMoveSpeed(speed); r.setPose(pose); }
+    for (let i = 0; i < settle / 0.02; i++) frame(0.02);
+    let info = null;
+    if (action) for (const r of rigs) info = typeof r[action] === 'function' ? r[action](arg) : null;
+    let cur = 0;
+    const src = renderer.domElement, sw = src.width * crop, sh = Math.min(src.height, sw * ch / cw);
+    times.forEach((t, i) => {
+      while (cur < t - 1e-6) { frame(0.01); cur += 0.01; }
+      frame(0);
+      g.drawImage(src, (src.width - sw) / 2, (src.height - sh) / 2, sw, sh, (i % cols) * cw, Math.floor(i / cols) * ch, cw, ch);
+      g.fillStyle = '#fff'; g.font = '14px sans-serif'; g.fillText(t.toFixed(2) + 's', (i % cols) * cw + 6, Math.floor(i / cols) * ch + 18);
+    });
+    return info;
+  },
+  // contact sheet: one cell per model (names = substrings of the dropdown names)
+  grid(names, cols = 3, opts = {}) {
+    let out = document.getElementById('stripCanvas');
+    if (!out) { out = document.createElement('canvas'); out.id = 'stripCanvas'; Object.assign(out.style, { position: 'fixed', left: 0, top: 0, width: '100vw', height: '100vh', zIndex: 10, background: '#000' }); document.body.appendChild(out); out.onclick = () => (out.style.display = 'none'); }
+    const src = renderer.domElement;
+    out.width = src.width; out.height = src.height; out.style.display = '';
+    const g = out.getContext('2d'); g.clearRect(0, 0, out.width, out.height);
+    const rows = Math.ceil(names.length / cols), cw = out.width / cols, ch = out.height / rows;
+    names.forEach((nm, i) => {
+      const idx = typeof nm === 'number' ? nm : entries.findIndex((e) => e.name.toLowerCase().includes(nm.toLowerCase()));
+      sel.value = idx; spawn();
+      const r = rigs[0]; const h = r.height || 1.8;
+      if (opts.setup) opts.setup(r);
+      r.setMoveSpeed(opts.speed || 0); r.setPose(opts.pose || 'idle');
+      for (let k = 0; k < (opts.settle ?? 1) / 0.02; k++) frame(0.02);
+      if (opts.action) { const m = typeof opts.arg === 'function' ? opts.arg(r) : opts.arg; r[opts.action](m); for (let x = 0; x < (opts.t || 0); x += 0.01) frame(0.01); }
+      Object.assign(orbit, { target: new THREE.Vector3(0, h * (opts.ty || 0.5), 0), dist: Math.max(2.2, h * 1.9) * (opts.zoom || 1), yaw: opts.yaw ?? 0.7, pitch: opts.pitch ?? 0.2 });
+      frame(0);
+      const crop = opts.crop || 0.7, sw = src.width * crop, sh = Math.min(src.height, sw * ch / cw);
+      g.drawImage(src, (src.width - sw) / 2, (src.height - sh) / 2, sw, sh, (i % cols) * cw, Math.floor(i / cols) * ch, cw, ch);
+      g.fillStyle = '#fff'; g.font = (14 * devicePixelRatio) + 'px sans-serif'; g.fillText(entries[idx].name, (i % cols) * cw + 6, Math.floor(i / cols) * ch + 18 * devicePixelRatio);
+    });
+    return 'ok';
+  },
+  hideStrip() { const o = document.getElementById('stripCanvas'); if (o) o.style.display = 'none'; },
+  ui(v) { document.getElementById('ui').style.display = v ? '' : 'none'; document.getElementById('err').style.display = v ? '' : 'none'; },
+};
+if (new URLSearchParams(location.search).get('ui') === '0') window.__test.ui(false);
+</script>
+</body>
+</html>
