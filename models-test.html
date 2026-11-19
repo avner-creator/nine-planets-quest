@@ -37,6 +37,7 @@
   <div id="gear">
     <label>Sword</label><select id="sword"></select>
     <label>Armour</label><select id="armor"></select>
+    <label>Fight style</label><select id="style"><option value="default">hero default</option><option value="sword">sword</option><option value="fists">fists</option></select>
   </div>
   <label>Move speed: <span id="spdv">0</span> m/s</label>
   <input type="range" id="speed" min="0" max="12" step="0.1" value="0">
@@ -149,9 +150,10 @@ function group(label, items) {
   for (const it of items) { const o = document.createElement('option'); o.value = entries.length; o.textContent = it.name; entries.push(it); og.appendChild(o); }
   sel.appendChild(og);
 }
-group('Heroes', CHARACTERS.map((c) => ({ name: `${c.name} - ${c.title}`, type: 'hero', def: c })));
+group('Heroes', [...CHARACTERS.map((c) => ({ name: `${c.name} - ${c.title}`+ (c.fightStyle === 'fists' ? ' (fists)' : ''), type: 'hero', def: c })), ...CHARACTERS.filter((c) => c.fightStyle === 'fists').map((c) => ({ name: `${c.name} - ${c.title} (sword style)`, type: 'hero', def: c, style: 'sword' }))]);
 group('NPCs', [
   { name: 'Merchant', type: 'npc', kind: 'merchant' },
+  { name: 'Sensei - Dojo Master (npc)', type: 'npc', kind: 'sensei' },
   ...[1, 2, 3, 4, 5, 6, 7, 8].map((s) => ({ name: `Villager #${s}`, type: 'npc', kind: 'villager', seed: s })),
   ...DIMENSIONS.map((d, i) => ({ name: `${d.bandit.name} (bandit, ${d.name})`, type: 'npc', kind: 'bandit', outfit: d.bandit.outfit, seed: i + 1 })),
   ...DIMENSIONS.map((d, i) => ({ name: `${d.bandit.name} Captain (${d.name})`, type: 'npc', kind: 'bandit_captain', outfit: d.bandit.outfit, seed: i + 1 })),
@@ -160,6 +162,8 @@ DIMENSIONS.forEach((d) => group(`Enemies - ${d.name}`, d.enemies.map((e) => ({ n
 group('Night creatures', NIGHT_CREATURES.map((e) => ({ name: `${e.name} (${e.shape})`, type: 'enemy', def: e })));
 group('Bosses', DIMENSIONS.map((d) => ({ name: `${d.boss.name}, ${d.boss.title} (${d.boss.shape})`, type: 'boss', def: d.boss })));
 DIMENSIONS.forEach((d) => { if (d.temples) group(`Temple guardians - ${d.name}`, d.temples.map((t) => ({ name: `${t.boss.name}, ${t.boss.title} (${t.boss.shape}, ${t.name})`, type: 'boss', def: t.boss }))); });
+group('Friendly people', ['healer', 'guide', 'smith', 'brewer', 'sage', 'guard', 'cook', 'bard', 'mapmaker', 'portalkeeper', 'fortune', 'banker', 'trainer', 'questgiver', 'tamer', 'watchman', 'knight', 'archer', 'mage', 'farmer', 'child', 'elder', 'traveler', 'fisher', 'miner', 'monk', 'explorer'].map((k) => ({ name: k[0].toUpperCase() + k.slice(1) + ' (friendly)', type: 'npc', kind: k, seed: 1 })));
+group('Animals', ['dog', 'cat', 'chicken', 'rabbit', 'deer', 'penguin'].map((k) => ({ name: k[0].toUpperCase() + k.slice(1) + ' (animal)', type: 'critter', kind: k, seed: 1 })));
 group('Friendly summons', [['treant', 'Treant Buddy'], ['golem', 'Rock Golem'], ['golem', 'Snow Golem', '#e8eef4'], ['bird', 'Storm Bird'], ['phoenix', 'Fire Phoenix'], ['skeleton', 'Skeleton Army'], ['spirit', 'Shadow Clone', '#6a4aff']].map(([kind, name, color]) => ({ name: `${name} (summon ${kind})`, type: 'summon', kind, color })));
 
 const swordSel = document.getElementById('sword');
@@ -179,6 +183,7 @@ function create(e) {
   if (e.type === 'enemy') return Enemies.createEnemy(e.def, { quality });
   if (e.type === 'boss') return Bosses.createBoss(e.def, { quality });
   if (e.type === 'summon') return Enemies.createSummon(e.kind, { color: e.color, quality });
+  if (e.type === 'critter') return Enemies.createCritter(e.kind, { quality, seed: e.seed || 1 });
 }
 function spawn() {
   for (const r of rigs) { try { r.dispose(); } catch (e) { logErr(e); } }
@@ -213,6 +218,7 @@ function applyGear() {
   for (const r of rigs) {
     if (r.setSword && entry.type === 'hero') { const i = +swordSel.value; r.setSword(i < 0 ? null : SWORDS[i]); }
     if (r.setArmor && entry.type === 'hero') r.setArmor(ARMORS[+armorSel.value]);
+    if (r.setFightStyle && entry.type === 'hero') { const v = document.getElementById('style').value; r.setFightStyle(v === 'default' ? (entry.style || entry.def.fightStyle || 'sword') : v); }
     if (r.setFrozen) r.setFrozen(frozen);
     if (r.setTint) r.setTint(tint ? (entry.type === 'summon' ? '#7dff8a' : '#ff6a1a') : null);
     if (r.setEnraged) r.setEnraged(enraged);
@@ -230,9 +236,10 @@ function buildUI() {
   document.getElementById('gear').style.display = entry.type === 'hero' ? '' : 'none';
   if (human) {
     ['attack 0 (slash)', 'attack 1 (backhand)', 'attack 2 (slam)'].forEach((l, i) => btn(ab, l, () => { for (const r of rigs) showTiming(r.attack(i)); }));
+    if (rigs[0] && rigs[0].flyingKick) btn(ab, 'flying kick', () => { for (const r of rigs) showTiming(r.flyingKick()); });
     btn(ab, 'combo 0-1-2', () => { let t = 0; for (const i of [0, 1, 2]) { setTimeout(() => { for (const r of rigs) showTiming(r.attack(i)); }, t * 1000); t += 0.5; } });
     for (const p of POWERS) btn(cb, p.name, () => { for (const r of rigs) showTiming(r.cast(p.id)); });
-  } else if (entry.type === 'enemy' || entry.type === 'summon') {
+  } else if (entry.type === 'enemy' || entry.type === 'summon' || entry.type === 'critter') {
     btn(ab, 'attack', () => { for (const r of rigs) showTiming(r.attack()); });
   } else if (entry.type === 'boss') {
     for (const m of rigs[0]?.moves || []) btn(ab, m, () => { for (const r of rigs) showTiming(r.play(m)); });
@@ -246,7 +253,7 @@ function setSpeed(v) { spd.value = v; spdv.textContent = (+v).toFixed(1); for (c
 spd.oninput = () => setSpeed(spd.value);
 sel.onchange = () => { spawn(); curPose = 'idle'; };
 qualitySel.onchange = spawn; countSel.onchange = spawn;
-swordSel.onchange = applyGear; armorSel.onchange = applyGear;
+swordSel.onchange = applyGear; armorSel.onchange = applyGear; document.getElementById('style').onchange = applyGear;
 const tog = (id, fn) => { const b = document.getElementById(id); b.onclick = () => { b.classList.toggle('on'); fn(b.classList.contains('on')); }; };
 tog('walkAround', (v) => { walkAround = v; if (!v) for (const r of rigs) { r.root.position.set(0, 0, 0); r.root.rotation.y = 0; } });
 tog('frozen', (v) => { frozen = v; applyGear(); });

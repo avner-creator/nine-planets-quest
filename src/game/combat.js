@@ -9,13 +9,14 @@ export class Combat {
   constructor(game) { this.game = game; this._v = new THREE.Vector3(); }
 
   swordDamage(p = this.game.player) {
-    return p.sword.damage * p.strength * (p.suit && p.suit.kind === 'stone' ? 1.5 : 1);
+    return p.sword.damage * p.strength * (p.suit && p.suit.kind === 'stone' ? 1.5 : 1) * (p.buffs && p.buffs.sharp > 0 ? 1.25 : 1);   // Blacksmith: +25%
   }
 
-  playerSwing(p, combo) {
+  playerSwing(p, combo, o = {}) {
+    const kick = !!o.kick;   // Kai's flying kick: longer reach, more damage, knocks enemies up
     const g = this.game;
-    const range = 2.6 + (combo === 2 ? 0.6 : 0);
-    const cosArc = Math.cos(combo === 2 ? 1.25 : 1.05);
+    const range = kick ? 3.4 : 2.6 + (combo === 2 ? 0.6 : 0);
+    const cosArc = Math.cos(kick ? 1.35 : combo === 2 ? 1.25 : 1.05);
     const fx = Math.sin(p.yaw), fz = Math.cos(p.yaw);
     let hits = 0;
     for (const e of g.enemies.targets()) {
@@ -25,9 +26,9 @@ export class Combat {
       if (Math.abs(e.pos.y - p.pos.y) > 2.5 + (e.height || 2) * 0.6) continue;
       const dot = dist > 0.01 ? (dx * fx + dz * fz) / dist : 1;
       if (dot < cosArc && dist > e.radius + 0.9) continue;
-      let dmg = this.swordDamage(p) * COMBO_MUL[combo] * rand(0.9, 1.1);
+      let dmg = this.swordDamage(p) * (kick ? 1.9 : COMBO_MUL[combo]) * rand(0.9, 1.1);
       let crit = Math.random() < 0.12;
-      let label = null;
+      let label = kick ? 'Flying kick!' : null;
       if (crit) dmg *= 1.8;
       if (p.stat('stealth', 0) && !e.noticed && !e.isBoss) { dmg *= 2; label = 'Sneak!'; crit = true; }
       // Shadow Suit: double damage from behind
@@ -35,10 +36,11 @@ export class Combat {
         const efx = Math.sin(e.yaw || 0), efz = Math.cos(e.yaw || 0);
         if ((-dx * efx - dz * efz) / dist < 0) { dmg *= 2; label = 'Backstab!'; crit = true; }
       }
-      g.enemies.hit(e, dmg, { source: 'sword', crit, label, knock: COMBO_KNOCK[combo], from: p.pos, by: p });
+      g.enemies.hit(e, dmg, { source: 'sword', crit, label, knock: kick ? 10 : COMBO_KNOCK[combo], from: p.pos, by: p });
+      if (kick && e.alive && !e.isBoss && !e.isDummy) g.enemies.lift(e, 7);
       hits++;
       const hp = this._v.set(e.pos.x - fx * e.radius * 0.5, e.pos.y + (e.hitHeight || e.height || 1.5) * 0.55, e.pos.z - fz * e.radius * 0.5);
-      g.fx.hitSparks(hp, p.sword.emissive || '#ffe9a8', crit || combo === 2);
+      g.fx.hitSparks(hp, p.fists ? '#ffffff' : (p.sword.emissive || '#ffe9a8'), crit || combo === 2);
       if (crit || combo === 2) g.fx.flash(hp, '#ffe0a0', 6, 6, 0.15);
     }
     if (hits) {

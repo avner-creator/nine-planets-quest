@@ -103,7 +103,7 @@ RECIPES.home = (kit) => {
     layout: {
       spawn: V(0, 12), spawnYaw: Math.PI,
       plaza: { ...plazaC, r: pR }, portals,
-      house: { x: 46, z: 22, yaw: -Math.PI / 2 }, garden: { x: 52, z: 47, yaw: -Math.PI / 2 },
+      house: { x: 46, z: 22, yaw: -Math.PI / 2 }, garden: { x: 52, z: 47, yaw: -Math.PI / 2 }, dojo: { x: 64, z: -28 },
       market: { x: -46, z: 18, yaw: Math.PI / 2 }, dock: { x: -30, z: 56, yaw: 0, len: 14 },
       villagers: [V(-40, 24), V(-52, 8), V(44, 40), V(12, -40), V(-14, -44), V(-22, 52), V(34, 28), V(6, 20)],
     },

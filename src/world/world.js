@@ -7,7 +7,7 @@ import { Heightfield, heightTexture, terrainMaterial, TerrainLOD, farGeometry } 
 import { createSky, computeDaylight, makeSkyPalette } from './sky.js';
 import { createLiquid, fogUniforms, lavaDisc } from './water.js';
 import { createVegetation } from './vegetation.js';
-import { structureMaterials } from './materials.js';
+import { structureMaterials, packedMaterial } from './materials.js';
 import { Builder, FloorSet, LightPool } from './builder.js';
 import { FlameSet, lanternPost } from './props.js';
 import { house, temple, templeDynamic, tradingPost, banditCamp, bossArena, market, dock, garden, plaza, portalDecor, courtyard, PORTAL_THEMES, TEMPLE_STYLES } from './structures.js';
@@ -16,6 +16,7 @@ import { runeTexture, stripeTexture, plaqueAtlas, lockTexture } from './canvasTe
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js';
 import { buildExtras, createTumbleweeds } from './extras.js';
 import { createWeather } from './weather.js';
+import { buildDojo, shojiTexture } from './dojo.js';
 import { RECIPES, yawTo } from './biomes.js';
 
 const V3 = THREE.Vector3;
@@ -45,6 +46,13 @@ export async function buildWorld(id, { renderer, scene, quality = 'high' } = {})
   // ------------------------------------------------------------ layout → pads & paths
   const pads = (recipe.pads || []).map((p) => ({ ...p }));
   const paths = (recipe.paths || []).map((p) => ({ ...p }));
+  let dojoYaw = 0;
+  if (isHome && L.dojo) {
+    dojoYaw = yawTo(L.dojo, L.spawn);
+    const fx = Math.sin(dojoYaw), fz = Math.cos(dojoYaw), ex = L.dojo.x + fx * 16.5, ez = L.dojo.z + fz * 16.5;
+    pads.push({ x: L.dojo.x, z: L.dojo.z, r: 17, fall: 12 }, { x: ex, z: ez, r: 4, fall: 6 });
+    paths.push({ pts: [[0, 12], [(ex) * 0.5, 12 + (ez - 12) * 0.5 - 4], [ex, ez]], w: 1.3, dojo: true });
+  }
   let shopYaw = 0, portalYaw = 0, arenaYaw = 0;
   const TSCALE = [0.55, 0.8, 1.1];
   const templeSpots = [];
@@ -312,6 +320,7 @@ export async function buildWorld(id, { renderer, scene, quality = 'high' } = {})
     const tex = stripeTexture(c[0], c[1], 8); canopyTex.push(tex);
     mats[k] = new THREE.MeshStandardMaterial({ map: tex, roughness: 0.9, side: THREE.DoubleSide, vertexColors: true });
   });
+if (isHome) {    const shojiTex = shojiTexture(); canopyTex.push(shojiTex);    mats.shoji = new THREE.MeshStandardMaterial({ map: shojiTex, emissive: 0xffb870, emissiveMap: shojiTex, emissiveIntensity: 0.05, roughness: 0.9, side: THREE.DoubleSide, vertexColors: true });    mats.polish = packedMaterial(renderer, { tex: 'planks', roughness: 0.45, vertexColors: true, normalScale: 0.6, luma: [0.7, 1.25], auxVar: 0.3 });  }
   const b = new Builder(mats, floors, colliders, lights);
   const flames = new FlameSet();
   const noiseTex = bakeTexture(renderer, 'clouds');
@@ -423,8 +432,14 @@ export async function buildWorld(id, { renderer, scene, quality = 'high' } = {})
     // dock
     const Dk = L.dock; b.at(Dk.x, groundAt(Dk.x, Dk.z), Dk.z, Dk.yaw); b.frame.y = 0; dock(b, Dk.len, level + 0.75);
     // lanterns along paths + plaza
-    for (const p of recipe.paths) lanternsAlong(chaikin(p.pts, 1), 16);
+    for (const p of paths) lanternsAlong(chaikin(p.pts, 1), 16);
     for (let k = 0; k < 6; k++) { const a = Math.PI + (k - 2.5) * 0.42; const x = pc.x + Math.sin(a) * (pc.r - 2.5), z = pc.z - Math.cos(a) * (pc.r - 2.5); b.at(x, py, z, a); lanternPost(b, 0, 0, 3.0); }
+    // dojo
+    if (L.dojo) {
+      b.at(L.dojo.x, padH(L.dojo.x, L.dojo.z), L.dojo.z, dojoYaw);
+      const dj = buildDojo(b, { group: root, lights, disposables });
+      landmarks.dojo = { pos: new V3(dj.pos.x, heightAt(dj.pos.x, dj.pos.z), dj.pos.z), door: dj.door, mat: dj.mat, master: dj.master, masterYaw: dj.masterYaw, dummies: dj.dummies, radius: dj.radius };
+    }
     landmarks.villagers = L.villagers.map((v) => new V3(v.x, heightAt(v.x, v.z), v.z));
   } else {
     const power = POWERS[idx].color;
@@ -584,6 +599,7 @@ export async function buildWorld(id, { renderer, scene, quality = 'high' } = {})
     renderer.toneMappingExposure = p.exposure;
     night = p.night;
     mats.window.emissiveIntensity = 0.05 + night * 2.4;
+    if (mats.shoji) mats.shoji.emissiveIntensity = 0.32 + night * 0.7;
     mats.lamp.emissiveIntensity = 0.25 + night * 3.0;
     mats.glow.emissiveIntensity = 0.8 + night * 0.6;
     if (liquid) liquid.update(lastTime, p);

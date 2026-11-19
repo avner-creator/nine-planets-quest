@@ -71,6 +71,16 @@ export class Enemies {
     }
     return best;
   }
+  // players or a buddy (friendly fighters can be attacked; villagers, healers and guides never)
+  nearestFoe(pos) {
+    let best = this.nearestPlayer(pos, true), bd = best ? Math.hypot(best.pos.x - pos.x, best.pos.z - pos.z) : Infinity;
+    for (const b of (this.game.buddies ? this.game.buddies.list : [])) {
+      if (b.dead) continue;
+      const d = Math.hypot(b.pos.x - pos.x, b.pos.z - pos.z);
+      if (d < bd) { bd = d; best = b; }
+    }
+    return best;
+  }
   minPlayerDist(x, z) { let m = Infinity; for (const p of this.game.players) m = Math.min(m, Math.hypot(p.pos.x - x, p.pos.z - z)); return m; }
 
   spawnMonster(minDist = 40) {
@@ -162,6 +172,9 @@ export class Enemies {
   }
 
   add(o) {
+    // Easy / Medium / Hard: tougher or softer monsters (new spawns use the current setting)
+    const D = this.game.diff;
+    o = { ...o, hp: o.hp * D.enemyHp, dmg: o.dmg * D.enemyDmg };
     const q = this.game.settings.quality;
     let rig;
     if (o.kind === 'bandit') rig = createNPC(o.captain ? 'bandit_captain' : 'bandit', { outfit: o.outfit, seed: NEXT_ID * 7 + 3, quality: q });
@@ -190,6 +203,7 @@ export class Enemies {
   targets() {
     const out = this.list.filter((e) => e.alive);
     if (this.game.boss) for (const b of this.game.boss.list) if (b.alive) out.push(b);
+    if (this.game.npcs) for (const d of this.game.npcs.dummies) if (d.alive) out.push(d);   // practice dummies (Home: dojo + trainer)
     return out;
   }
 
@@ -197,9 +211,11 @@ export class Enemies {
   hit(e, dmg, o = {}) {
     if (!e || !e.alive) return 0;
     if (e.isBoss) return this.game.boss.hit(e, dmg, o);
+    if (e.isDummy) return this.game.npcs.hitDummy(e, dmg, o);   // practice dummies only count hits
     const g = this.game;
     if (e.isNight && o.source === 'sword') dmg *= 0.5;
     if (o.power === 'light' && (e.isNight || e.isDark)) dmg *= 2;
+    if (e.isNight && g.npcs.watchBoost(e.pos)) dmg *= 2;   // the Night Watch's lantern
     dmg = Math.max(1, Math.round(dmg));
     e.hp -= dmg;
     e.lastHitT = g.time;
@@ -218,6 +234,7 @@ export class Enemies {
   }
 
   kill(e, o = {}) {
+    if (e.isDummy) return;
     if (!e.alive) return;
     const g = this.game;
     e.alive = false;
@@ -236,8 +253,10 @@ export class Enemies {
     const killer = o.by || g.player;
     const coinBonus = killer.stat('coinBonus', 1);
     const loot = e.loot && Math.random() < (e.kind === 'bandit' ? 0.6 : e.kind === 'night' ? 0.7 : 0.35) ? e.loot : null;
-    g.fx.dropCoins(e.pos, Math.max(1, Math.round(e.coins * coinBonus * rand(0.85, 1.15))), loot);
-    g.player.addXp(e.xp);
+    const D = g.diff;
+    g.fx.dropCoins(e.pos, Math.max(1, Math.round(e.coins * coinBonus * D.coins * rand(0.85, 1.15))), loot);
+    g.player.addXp(Math.round(e.xp * D.xp));
+    if (g.npcs) g.npcs.onEnemyKilled(e, o);
     g.state.kills++;
     if (e.kind === 'bandit') {
       g.state.banditsDefeated = (g.state.banditsDefeated || 0) + 1;
@@ -269,11 +288,11 @@ export class Enemies {
         }
       }
     }
-    if (night && awake.length && g.mode.id !== 'creative') {
+    if (night && awake.length && g.mode.id !== 'creative' && this.dim) {   // Home Base is safe: no night creatures there
       this.nightT -= dt;
-      const maxN = Math.min(6, 4 + Math.floor(this.level / 4));
+      const maxN = g.diff.nightMax;
       const n = this.list.filter((e) => e.kind === 'night' && e.alive).length;
-      if (this.nightT <= 0) { if (n < maxN) this.spawnNight(); this.nightT = rand(20, 30); }
+      if (this.nightT <= 0) { if (n < maxN) this.spawnNight(); this.nightT = rand(20, 30) * g.diff.nightEvery; }
     } else if (!night) this.nightT = 8;
     if (this.wasNight && !night) {
       // sunrise: night creatures fade away
@@ -286,7 +305,7 @@ export class Enemies {
     for (let i = this.list.length - 1; i >= 0; i--) {
       const e = this.list[i];
       // each enemy goes after the closest player
-      const p = (e.alive && this.nearestPlayer(e.pos, true)) || this.nearestPlayer(e.pos) || g.player;
+      const p = (e.alive && this.nearestFoe(e.pos)) || this.nearestPlayer(e.pos) || g.player;
       const detectable = !p.dead && !p.sleeping && p.fadeT <= 0;
       const stealth = p.stat('stealth', 1);
       if (!e.rig) { this.list.splice(i, 1); continue; }

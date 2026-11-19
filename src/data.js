@@ -28,6 +28,19 @@ export const MODES = [
   },
 ];
 
+// ---------------------------------------------------------------- difficulty (2026-11-19)
+// Picked when starting a Quest or Hero game (Creative always uses 'easy'); can be changed any time in the pause menu.
+// Multipliers apply to monsters, bandits, night creatures, champions, guardians and bosses.
+export const DIFFICULTIES = [
+  { id: 'easy',   name: 'Easy',   desc: 'Monsters are weaker and hit softly. Great for learning!',
+    enemyHp: 0.6, enemyDmg: 0.5, bossHp: 0.6, bossDmg: 0.5, coins: 1.3, xp: 1.2, nightEvery: 1.6, nightMax: 3, waveExtra: -1, hpRegen: 2.0 },
+  { id: 'medium', name: 'Medium', desc: 'A fair fight.',
+    enemyHp: 1.0, enemyDmg: 1.0, bossHp: 1.0, bossDmg: 1.0, coins: 1.0, xp: 1.0, nightEvery: 1.0, nightMax: 5, waveExtra: 0, hpRegen: 1.0 },
+  { id: 'hard',   name: 'Hard',   desc: 'Tough monsters that hit hard. For real heroes!',
+    enemyHp: 1.5, enemyDmg: 1.5, bossHp: 1.6, bossDmg: 1.4, coins: 1.25, xp: 1.3, nightEvery: 0.7, nightMax: 7, waveExtra: 2, hpRegen: 0.5 },
+];
+export const DEFAULT_DIFFICULTY = 'medium';
+
 // ---------------------------------------------------------------- day & night
 // timeOfDay t runs 0..1: 0 = midnight, 0.25 = sunrise, 0.5 = noon, 0.75 = sunset.
 export const DAY_NIGHT = {
@@ -292,6 +305,18 @@ const HERO_POWER = { aria: 0 /* Life */, bram: 4 /* Earth */, kira: 5 /* Lightni
   rex: 2 /* Fire */, nova: 7 /* Darkness - black holes from space */, ivy: 1 /* Healing */, zane: 8 /* Death */ };
 for (const c of CHARACTERS) c.power = HERO_POWER[c.id];
 
+// 10th hero (2026-11-19): KAI THE DOJO MASTER - lives in the Dojo at Home Base. Talk to him there to unlock him in the
+// hero picker (Creative: unlocked from the start). He fights with fists and kicks instead of a sword
+// (fightStyle 'fists'; damage still grows with your sword tier). He has NO own element (power: null) - he uses
+// whatever power moves you have won, like everyone else.
+CHARACTERS.push({
+  id: 'kai', name: 'Kai', title: 'Dojo Master', bio: 'Super fast punches and kicks. No sword needed!',
+  stats: { hp: 115, mana: 90, speed: 1.15, strength: 1.2, manaRegen: 1.0, attackSpeed: 1.4 },
+  look: { skin: '#d9a47c', hair: '#1a1a1a', hairStyle: 'short', outfit: '#f4f1ea', accent: '#151515', cape: false, build: 'broad',
+          outfitStyle: 'gi', headband: '#c4242b' },
+  power: null, fightStyle: 'fists', unlock: 'dojo',
+});
+
 // ---------------------------------------------------------------- levels
 export function xpForLevel(level) { return Math.round(60 * Math.pow(level, 1.6)); }
 export const LEVEL_UP = { hp: 10, mana: 5, strength: 0.03 };
@@ -544,3 +569,80 @@ export const HOME = {
     weather: 'clear', alwaysNight: false,
   },
 };
+
+// ---------------------------------------------------------------- friendly people + animals (2026-11-19)
+// Home Base is SAFE (no hostile mobs at all, no night creatures). Every world has friendly people; Healer, Guide
+// and at least one buddy are in every world. `model` is the createNPC kind (src/models/characters.js);
+// role: 'helper' (E = its ability), 'buddy' (E = joins you, follows you through portals and fights),
+// 'roamer' (strolls around, E = chat), 'animal' (createCritter kind; just roams).
+// Abilities are described in `does`; the game decides exact numbers.
+export const FRIENDLY_NPCS = {
+  // helpers you talk to (E)
+  healer:       { name: 'Healer',         model: 'healer',       role: 'helper', does: 'Heals you and refills your mana (60 s wait).' },
+  guide:        { name: 'Guide',          model: 'guide',        role: 'helper', does: 'Tells you what to do next and points the way.' },
+  smith:        { name: 'Blacksmith',     model: 'smith',        role: 'helper', does: 'Sharpens your sword: +25% sword damage for 3 minutes.' },
+  brewer:       { name: 'Potion Brewer',  model: 'brewer',       role: 'helper', does: 'Gives you a free Health Potion (every 3 minutes).' },
+  sage:         { name: 'Mana Sage',      model: 'sage',         role: 'helper', does: 'Fills your mana and makes it come back twice as fast for 2 minutes.' },
+  guard:        { name: 'Shield Guard',   model: 'guard',        role: 'helper', does: 'Gives you a magic shield that blocks the next 3 hits.' },
+  cook:         { name: 'Cook',           model: 'cook',         role: 'helper', does: 'Cooks the crops you bring from a Farmer into food (see RECIPES). With no crops: a small free snack.' },
+  bard:         { name: 'Bard',           model: 'bard',         role: 'helper', does: 'Plays a song: you move and swing 15% faster for 90 seconds.' },
+  mapmaker:     { name: 'Map Maker',      model: 'mapmaker',     role: 'helper', does: 'Marks every temple, bandit camp and the boss on your map and minimap.' },
+  portalkeeper: { name: 'Portal Keeper',  model: 'portalkeeper', role: 'helper', does: 'Zaps you straight to a temple, the boss arena or the trading post of this world.' },
+  fortune:      { name: 'Fortune Teller', model: 'fortune',      role: 'helper', does: 'Tells your fortune and gives you luck: double coins for 2 minutes.' },
+  banker:       { name: 'Coin Keeper',    model: 'banker',       role: 'helper', does: 'Gives you a gift of coins once every day.' },
+  trainer:      { name: 'Trainer',        model: 'trainer',      role: 'helper', does: 'Training challenge: hit the practice dummy 10 times in 15 seconds to win XP.' },
+  questgiver:   { name: 'Quest Giver',    model: 'questgiver',   role: 'helper', does: 'Gives a small side quest (beat some monsters or bandits) for coins and XP.' },
+  tamer:        { name: 'Animal Tamer',   model: 'tamer',        role: 'helper', does: 'Gives you a pet that follows you everywhere and picks up coins for you.' },
+  watchman:     { name: 'Night Watch',    model: 'watchman',     role: 'helper', does: 'At night walks with you with a bright lantern: night creatures near you take double damage.' },
+  // buddies (one per player at a time)
+  knight:       { name: 'Knight Buddy',   model: 'knight',       role: 'buddy',  does: 'Follows you and fights with a sword and shield.' },
+  archer:       { name: 'Archer Buddy',   model: 'archer',       role: 'buddy',  does: 'Follows you and shoots arrows at monsters.' },
+  mage:         { name: 'Mage Buddy',     model: 'mage',         role: 'buddy',  does: "Follows you and throws magic bolts of this world's element." },
+  // roamers
+  villager:     { name: 'Villager',       model: 'villager',     role: 'roamer' },
+  farmer:       { name: 'Farmer',         model: 'farmer',       role: 'helper', does: 'Gives you crops (wheat, carrots or apples) to take to a Cook (every 2 minutes).' },
+  child:        { name: 'Kid',            model: 'child',        role: 'roamer' },
+  elder:        { name: 'Elder',          model: 'elder',        role: 'roamer' },
+  traveler:     { name: 'Traveler',       model: 'traveler',     role: 'roamer' },
+  fisher:       { name: 'Fisher',         model: 'fisher',       role: 'roamer' },
+  miner:        { name: 'Miner',          model: 'miner',        role: 'roamer' },
+  monk:         { name: 'Monk',           model: 'monk',         role: 'roamer' },
+  explorer:     { name: 'Explorer',       model: 'explorer',     role: 'roamer' },
+  // animals (createCritter kinds)
+  dog:     { name: 'Dog',     model: 'dog',     role: 'animal' },
+  cat:     { name: 'Cat',     model: 'cat',     role: 'animal' },
+  chicken: { name: 'Chicken', model: 'chicken', role: 'animal' },
+  rabbit:  { name: 'Rabbit',  model: 'rabbit',  role: 'animal' },
+  deer:    { name: 'Deer',    model: 'deer',    role: 'animal' },
+  penguin: { name: 'Penguin', model: 'penguin', role: 'animal' },
+};
+// Who lives where. Outfits should fit each world (the game picks colours from the biome).
+export const WORLD_NPCS = {
+  home: ['healer', 'guide', 'knight', 'archer', 'mage', 'smith', 'brewer', 'banker', 'bard', 'trainer', 'tamer', 'fortune',
+         'farmer', 'cook', 'villager', 'child', 'child', 'elder', 'dog', 'cat', 'chicken', 'chicken'],
+  0: ['healer', 'guide', 'archer', 'mapmaker', 'cook', 'questgiver', 'tamer', 'farmer', 'traveler', 'child', 'deer', 'rabbit'],
+  1: ['healer', 'guide', 'mage', 'portalkeeper', 'cook', 'questgiver', 'guard', 'fisher', 'fisher', 'child', 'cat', 'dog'],
+  2: ['healer', 'guide', 'knight', 'smith', 'guard', 'mapmaker', 'questgiver', 'miner', 'miner', 'traveler', 'dog'],
+  3: ['healer', 'guide', 'archer', 'cook', 'watchman', 'portalkeeper', 'questgiver', 'traveler', 'child', 'elder', 'penguin', 'penguin', 'rabbit'],
+  4: ['healer', 'guide', 'knight', 'smith', 'mapmaker', 'tamer', 'questgiver', 'miner', 'explorer', 'farmer', 'dog', 'chicken'],
+  5: ['healer', 'guide', 'mage', 'sage', 'guard', 'portalkeeper', 'questgiver', 'monk', 'explorer', 'traveler', 'cat'],
+  6: ['healer', 'guide', 'archer', 'fortune', 'brewer', 'mapmaker', 'questgiver', 'explorer', 'traveler', 'elder', 'cat', 'rabbit'],
+  7: ['healer', 'guide', 'mage', 'watchman', 'sage', 'fortune', 'questgiver', 'monk', 'elder', 'traveler', 'cat'],
+  8: ['healer', 'guide', 'knight', 'watchman', 'guard', 'sage', 'portalkeeper', 'questgiver', 'monk', 'explorer', 'dog'],
+};
+// Farmer -> crops -> Cook -> food. Crops and food go in your bag (saved, shared in 2P, carried to every world).
+// Food is eaten AUTOMATICALLY when health drops below 50% (before potions); the Cook can also serve it right away.
+export const CROPS = [
+  { id: 'wheat',  name: 'Wheat',   color: '#e3c46a' },
+  { id: 'carrot', name: 'Carrots', color: '#f08a24' },
+  { id: 'apple',  name: 'Apples',  color: '#d8282f' },
+];
+export const RECIPES = [   // 1 crop -> 1 food
+  { crop: 'wheat',  food: 'bread',  name: 'Bread',       heal: 80,  mana: 0,  buff: null,                         color: '#c98a43' },
+  { crop: 'carrot', food: 'soup',   name: 'Carrot Soup', heal: 60,  mana: 50, buff: null,                         color: '#f08a24' },
+  { crop: 'apple',  food: 'pie',    name: 'Apple Pie',   heal: 120, mana: 0,  buff: { kind: 'speed', mul: 1.25, seconds: 60 }, color: '#b5502e' },
+];
+
+export const NPC_NAMES = ['Rowan', 'Mira', 'Tobin', 'Pip', 'Juniper', 'Ezra', 'Wren', 'Milo', 'Hazel', 'Otto', 'Luna', 'Finn',
+  'Ivy', 'Bram', 'Cora', 'Dex', 'Fern', 'Gus', 'Hope', 'Jasper', 'Kit', 'Lark', 'Moss', 'Nell', 'Ollie', 'Poppy', 'Quinn',
+  'Rue', 'Sage', 'Tally', 'Umi', 'Vale', 'Willa', 'Yara', 'Zed', 'Bea', 'Cal', 'Dot', 'Eli', 'Gwen'];

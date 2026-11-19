@@ -79,6 +79,7 @@ export class Allies {
     const g = this.game;
     let best = null, bd = range;
     for (const e of g.enemies.targets()) {
+      if (e.isDummy) continue;
       const d = Math.hypot(e.pos.x - a.pos.x, e.pos.z - a.pos.z);
       const dOwner = Math.hypot(e.pos.x - a.owner.pos.x, e.pos.z - a.owner.pos.z);
       if (dOwner > 22) continue;

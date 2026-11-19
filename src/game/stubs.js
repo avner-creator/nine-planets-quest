@@ -686,3 +686,72 @@ export function createBoss(def) {
     dispose() { fl.dispose(); root.removeFromParent(); },
   };
 }
+
+// ------------------------------------------------------------------ friendly animals (stand-in until models have createCritter)
+const CRITTERS = {
+  dog:     { body: '#a8763e', belly: '#e8c898', len: 0.62, h: 0.36, legs: 4, legL: 0.3, head: 0.17, ears: 'flop', tail: 0.28, scale: 1 },
+  cat:     { body: '#e0954a', belly: '#f6e2c8', len: 0.48, h: 0.28, legs: 4, legL: 0.24, head: 0.14, ears: 'point', tail: 0.4, scale: 0.85 },
+  rabbit:  { body: '#e8e2d8', belly: '#ffffff', len: 0.36, h: 0.22, legs: 4, legL: 0.12, head: 0.13, ears: 'long', tail: 0.06, scale: 0.8, hop: true },
+  chicken: { body: '#f6f2e8', belly: '#ffffff', len: 0.3, h: 0.32, legs: 2, legL: 0.16, head: 0.1, ears: 'comb', tail: 0.12, scale: 0.8, beak: '#f0a020' },
+  deer:    { body: '#b07a48', belly: '#ecd8bc', len: 0.9, h: 0.7, legs: 4, legL: 0.62, head: 0.18, ears: 'antler', tail: 0.1, scale: 1 },
+  penguin: { body: '#1e2228', belly: '#f6f6f6', len: 0.34, h: 0.62, legs: 2, legL: 0.08, head: 0.15, ears: 'none', tail: 0.05, scale: 0.85, upright: true, beak: '#f0a020' },
+};
+export function createCritter(kind = 'dog', { seed = 1 } = {}) {
+  const K = CRITTERS[kind] || CRITTERS.dog;
+  const root = new THREE.Object3D();
+  const body = new THREE.Group(); body.scale.setScalar(K.scale); root.add(body);
+  const r = ((seed * 9301 + 49297) % 233280) / 233280;
+  const fur = new THREE.Color(K.body).offsetHSL(0, 0, (r - 0.5) * 0.12);
+  const mBody = mat(fur), mBelly = mat(K.belly), mDark = mat('#1a1414');
+  const torso = new THREE.Group(); torso.position.y = K.legL + K.h * 0.5; body.add(torso);
+  if (K.upright) mesh(sphere(0.5), mBody, torso, 0, K.h * 0.2, 0, K.len * 0.9, K.h * 1.2, K.len * 0.8);
+  else mesh(sphere(0.5), mBody, torso, 0, 0, 0, K.h * 1.1, K.h, K.len);
+  mesh(sphere(0.5), mBelly, torso, 0, K.upright ? K.h * 0.1 : -K.h * 0.18, K.upright ? K.len * 0.18 : 0, K.h * 0.8, K.h * 0.6, K.len * 0.8);
+  const head = new THREE.Group();
+  head.position.set(0, K.upright ? K.h * 0.85 : K.h * 0.45, K.upright ? 0.02 : K.len * 0.5);
+  torso.add(head);
+  mesh(sphere(K.head), mBody, head);
+  [-1, 1].forEach((s) => mesh(sphere(K.head * 0.18), mDark, head, s * K.head * 0.42, K.head * 0.2, K.head * 0.82));
+  if (K.beak) mesh(box(), mat(K.beak), head, 0, -K.head * 0.1, K.head * 1.05, K.head * 0.4, K.head * 0.25, K.head * 0.6);
+  else mesh(sphere(K.head * 0.45), mBelly, head, 0, -K.head * 0.25, K.head * 0.8, 1, 0.8, 1.1);
+  if (K.ears === 'flop') [-1, 1].forEach((s) => { const e = mesh(box(), mat(fur.clone().multiplyScalar(0.6)), head, s * K.head * 0.85, K.head * 0.2, 0, 0.06, K.head * 1.1, K.head * 0.6); e.rotation.z = s * 0.3; });
+  if (K.ears === 'point') [-1, 1].forEach((s) => { const e = mesh(G('cone', () => new THREE.ConeGeometry(0.5, 1, 4)), mBody, head, s * K.head * 0.55, K.head * 0.95, -K.head * 0.1, K.head * 0.5, K.head * 0.7, K.head * 0.3); e.rotation.z = -s * 0.25; });
+  if (K.ears === 'long') [-1, 1].forEach((s) => { const e = mesh(capsule(0.5, 1), mBody, head, s * K.head * 0.35, K.head * 1.4, -K.head * 0.15, K.head * 0.28, K.head * 0.55, K.head * 0.18); e.rotation.z = -s * 0.15; });
+  if (K.ears === 'comb') mesh(box(), mat('#e03a2a'), head, 0, K.head * 1.0, 0.0, K.head * 0.25, K.head * 0.6, K.head * 1.0);
+  if (K.ears === 'antler') [-1, 1].forEach((s) => { const a = mesh(G('cyl', () => new THREE.CylinderGeometry(0.5, 0.5, 1, 6)), mat('#d8c8a0'), head, s * K.head * 0.45, K.head * 1.5, -K.head * 0.2, 0.05, K.head * 2.2, 0.05); a.rotation.z = -s * 0.5; });
+  const legs = [];
+  const legMat = K.beak ? mat(K.beak) : mBody;
+  const legPos = K.legs === 2 ? [[-0.07, 0], [0.07, 0]] : [[-K.h * 0.32, K.len * 0.32], [K.h * 0.32, K.len * 0.32], [-K.h * 0.32, -K.len * 0.32], [K.h * 0.32, -K.len * 0.32]];
+  legPos.forEach(([x, z]) => {
+    const g = new THREE.Group(); g.position.set(x, K.legL + 0.02, z); body.add(g);
+    mesh(capsule(0.5, 1), legMat, g, 0, -K.legL * 0.5, 0, Math.max(0.035, K.h * 0.13), K.legL * 0.5, Math.max(0.035, K.h * 0.13));
+    legs.push(g);
+  });
+  let tail = null;
+  if (K.tail > 0.07) { tail = new THREE.Group(); tail.position.set(0, K.h * 0.2, -K.len * 0.48); torso.add(tail); const t = mesh(capsule(0.5, 1), mBody, tail, 0, K.tail * 0.4, -K.tail * 0.2, 0.06, K.tail * 0.5, 0.06); t.rotation.x = -0.7; }
+  else mesh(sphere(0.5), mBelly, torso, 0, K.h * 0.1, -K.len * 0.5, 0.1, 0.1, 0.1);
+  let pose = 'idle', speed = 0, ph = r * 6, act = 0;
+  const fl = flashable(root);
+  const height = (K.legL + K.h * (K.upright ? 1.6 : 1.3) + K.head) * K.scale;
+  return {
+    root, height, radius: Math.max(0.25, K.len * 0.5 * K.scale), hitHeight: height + 0.2,
+    setPose(p) { pose = p; }, setMoveSpeed(s) { speed = s; },
+    attack() { act = 0.5; return { duration: 0.5, hitTime: 0.25 }; },
+    cast() { act = 0.5; return { duration: 0.5, releaseTime: 0.25 }; },
+    play() { act = 0.6; return { duration: 0.6, hitTime: 0.3 }; },
+    hurt() { fl.flash(); }, setFrozen(f) { fl.setFrozen(f); }, setTint(h) { fl.setTint(h); },
+    update(dt) {
+      fl.update(dt);
+      const moving = pose === 'walk' || pose === 'run';
+      ph += dt * (moving ? 3 + speed * 2.2 : 1.5);
+      const sw = moving ? Math.sin(ph) * 0.6 : 0;
+      legs.forEach((l, i) => { l.rotation.x = (i % 2 === (i < 2 ? 0 : 1) ? sw : -sw); });
+      if (K.hop) torso.position.y = K.legL + K.h * 0.5 + (moving ? Math.abs(Math.sin(ph)) * 0.12 : 0);
+      if (K.upright) body.rotation.z = moving ? Math.sin(ph) * 0.12 : 0;
+      head.rotation.x = pose === 'idle' && kind === 'chicken' ? Math.max(0, Math.sin(ph * 0.7)) * 0.8 : 0;
+      if (tail) tail.rotation.y = Math.sin(ph * (kind === 'dog' ? 4 : 1.2)) * (kind === 'dog' ? 0.6 : 0.3);
+      if (act > 0) { act = Math.max(0, act - dt); body.position.y = Math.sin((0.5 - act) * Math.PI * 2) * 0.12; } else body.position.y = 0;
+    },
+    dispose() { fl.dispose(); root.removeFromParent(); },
+  };
+}

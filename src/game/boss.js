@@ -51,7 +51,7 @@ export class BossManager {
     const e = {
       isBoss: true, kind: 'boss', role, tier, dimIndex: id, def, name: def.name, title: def.title, rig,
       pos, center: center.clone(), arenaR, yaw: yawTo(pos.x, pos.z, 0, 0), vel: new THREE.Vector3(),
-      hp: def.hp, maxHp: def.hp, dmg: def.dmg, radius: Math.max(1.2, rig.radius || 1.5), height: rig.height || def.size, hitHeight: rig.hitHeight || def.size + 0.5,
+      hp: Math.round(def.hp * g.diff.bossHp), maxHp: Math.round(def.hp * g.diff.bossHp), dmg: def.dmg * g.diff.bossDmg, radius: Math.max(1.2, rig.radius || 1.5), height: rig.height || def.size, hitHeight: rig.hitHeight || def.size + 0.5,
       alive: true, state: 'sleep', enraged: false, moveCd: 2, move: null, frozenT: 0, rootedT: 0, burnT: 0, burnDps: 0, burnTick: 0,
       noticed: true, isDark: !!DIMENSIONS[id].biome.alwaysNight, speed: role === 'key' ? 3.3 : 3.0, deadT: 0, pose: '', target: null,
     };
@@ -82,6 +82,8 @@ export class BossManager {
     const g = this.game;
     e.state = 'reset';
     e.move = null;
+    // a boss that resets picks up the current difficulty
+    e.maxHp = Math.round(e.def.hp * g.diff.bossHp); e.dmg = e.def.dmg * g.diff.bossDmg;
     e.hp = e.maxHp;
     e.enraged = false;
     e.rig.setEnraged(false);
@@ -127,8 +129,8 @@ export class BossManager {
     g.players.forEach((p) => p.cam.shake(0.8));
     const L = DIMENSIONS[e.dimIndex].level;
     const k = e.role === 'key' ? 1 : 0.5 + e.tier * 0.15;
-    g.fx.dropCoins(e.pos, Math.round(150 * L * k * g.player.stat('coinBonus', 1)), { name: `${e.name}'s Trophy`, value: Math.round(100 * L * k) });
-    g.player.addXp(Math.round(120 * L * k));
+    g.fx.dropCoins(e.pos, Math.round(150 * L * k * g.player.stat('coinBonus', 1) * g.diff.coins), { name: `${e.name}'s Trophy`, value: Math.round(100 * L * k) });
+    g.player.addXp(Math.round(120 * L * k * g.diff.xp));
     if (!this.fighting) g.audio.setMusicMood(g.moodForTime());
     if (e.role === 'key') g.onKeyGuardianDefeated(e.dimIndex, e.pos.clone());
     else g.onGuardianDefeated(e.dimIndex, e.tier);

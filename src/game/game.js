@@ -2,7 +2,7 @@
 // temples + crystals + portal keys, interactions, saving.
 import * as THREE from 'three';
 import {
-  MODES, DAY_NIGHT, isNight, POWERS, SWORDS, ARMORS, POTIONS, BLOCKS, CHARACTERS, DIMENSIONS, HOME, POWER_ATTACKS, TRIALS,
+  MODES, DAY_NIGHT, isNight, POWERS, SWORDS, ARMORS, POTIONS, BLOCKS, CHARACTERS, DIMENSIONS, HOME, POWER_ATTACKS, TRIALS, DIFFICULTIES, DEFAULT_DIFFICULTY,
 } from '../data.js';
 import { loadModules, buildWorld, using, createHero } from './modules.js';
 import { Input } from './input.js';
@@ -17,7 +17,7 @@ import { Powers, ROMAN } from './powers.js';
 import { Allies } from './allies.js';
 import { Trials } from './trials.js';
 import { Blocks } from './blocks.js';
-import { NPCs } from './npcs.js';
+import { NPCs, Buddies, Pets, RECIPE_OF } from './npcs.js';
 import { HUD } from './hud.js';
 import { UI } from './ui.js';
 import { GameAudio } from './audio.js';
@@ -85,6 +85,8 @@ export class Game {
     this.trials = new Trials(this);
     this.blocks = new Blocks(this);
     this.npcs = new NPCs(this);
+    this.buddies = new Buddies(this);
+    this.pets = new Pets(this);
 
     // warm lights that follow the players at night (fixed count so materials never recompile)
     this.nightLights = [new THREE.PointLight('#ffb070', 0, 18, 1.6), new THREE.PointLight('#ffb070', 0, 18, 1.6)];
@@ -163,7 +165,20 @@ export class Game {
   }
 
   // ---------------------------------------------------------------- menus -> game
-  newGame(modeId, players = 1) { this.startGame(newGameState(modeId, 0, players), true); }
+  newGame(modeId, players = 1, difficulty = DEFAULT_DIFFICULTY) { this.startGame(newGameState(modeId, 0, players, difficulty), true); }
+  // Easy / Medium / Hard (saved per game; Creative is always easy)
+  get diff() {
+    const s = this.state;
+    const id = !s ? DEFAULT_DIFFICULTY : s.mode === 'creative' ? 'easy' : (s.difficulty || DEFAULT_DIFFICULTY);
+    return DIFFICULTIES.find((d) => d.id === id) || DIFFICULTIES.find((d) => d.id === DEFAULT_DIFFICULTY);
+  }
+  setDifficulty(id) {
+    const s = this.state;
+    if (!s || s.mode === 'creative' || !DIFFICULTIES.some((d) => d.id === id)) return;
+    s.difficulty = id;
+    this.hud.refreshBadge();
+    this.saveNow();
+  }
   continueGame(modeId, players) {
     const s = loadGame(modeId);
     if (!s) return this.newGame(modeId, players || 1);
@@ -197,7 +212,7 @@ export class Game {
     this.ui.closeAll();
     this.setupPlayers(s.players === 2 ? 2 : 1);
     this.players.forEach((p, i) => {
-      p.dead = false; p.sleeping = false; p.flying = false; p.suit = null;
+      p.dead = false; p.sleeping = false; p.flying = false; p.suit = null; p.buffs = {};
       p.setCharacter(i === 0 ? s.character : s.character2, false);
       const hp = i === 0 ? s.hp : s.hp2, mp = i === 0 ? s.mana : s.mana2;
       if (hp != null) p.hp = clamp(hp, 1, p.maxHp);
@@ -217,6 +232,9 @@ export class Game {
     if (sp && Array.isArray(sp) && Number.isFinite(sp[0]) && !isNew) this.player.placeAt(new THREE.Vector3(sp[0], sp[1], sp[2]), s.yaw || 0);
     else this.placeAtSpawn();
     if (this.players[1]) this.placeBeside(this.players[1], this.player);
+    this.buddies.load(isNew ? [] : s.buddies);
+    this.pets.load(isNew ? [] : s.pets);
+    this.npcs.onWorldLoaded();
     this.players.forEach((p) => { p.cam.orbit = null; p.cam.snapBehind(p.yaw); });
     this.phase = 'play';
     this.hud.show(true);
@@ -229,8 +247,10 @@ export class Game {
   }
   fixSelection(p) {
     const sel = p.sel;
-    if (sel.power == null || !this.powers.elementUsable(p, sel.power)) { sel.power = p.ownPower; sel.move = 0; }
-    if (!this.powers.canUse(p, sel.power, sel.move)) sel.move = 0;
+    // a hero without an own element (Kai) starts on the first power that has a won move
+    const fallback = () => (p.ownPower != null ? p.ownPower : ([...Array(9).keys()].find((i) => this.powers.elementUsable(p, i)) ?? 0));
+    if (sel.power == null || !this.powers.elementUsable(p, sel.power)) { sel.power = fallback(); sel.move = 0; }
+    if (!this.powers.canUse(p, sel.power, sel.move)) sel.move = [...Array(9).keys()].find((m) => this.powers.canUse(p, sel.power, m)) || 0;
   }
 
   firstHints(isNew) {
@@ -249,6 +269,7 @@ export class Game {
       // the keys card no longer pops up by itself: it only shows with Alt + F5
       this.hud.hint('Press Alt + F5 any time to see all the keys.', 6);
     }
+    if (!h.helpers2) { h.helpers2 = true; this.hud.hint('Home Base is safe - no monsters here. Lots of friendly people live here: the Healer heals you, the Guide tells you what to do, and a Knight, Archer or Mage can come with you as your buddy!', 8); }
     if (!isNew) this.hud.toast(`Welcome back! ${this.mode.name} mode, Level ${this.state.level}.`, 'good', 3);
   }
 
@@ -259,6 +280,8 @@ export class Game {
     this.enemies.clear();
     this.boss.clear();
     this.allies.clear();
+    this.buddies.clearAll();
+    this.pets.clearAll();
     this.fx.clearWorld();
     this.hud.clearFloaters();
     this.state = null;
@@ -413,10 +436,13 @@ export class Game {
     await sleepMs(700);
     this.building = false;
     this.players.forEach((p) => { p.dead = false; p.hp = Math.max(p.hp, 1); if (p.lastPose === 'dead') { p.rig.setPose('idle'); p.lastPose = 'idle'; } });
+    this.buddies.beforeTravel();
     await this.setWorld(target);
     const L = this.world.landmarks;
     if (target === 'home') this.placeAtSpawn(L.portals && L.portals[fromId] ? L.portals[fromId] : null);
     else this.placeAtSpawn();
+    this.buddies.onWorldChanged();
+    this.pets.onWorldChanged();
     this.hud.refreshHotbar();
     this.audio.setMusicMood(this.moodForTime());
     this.saveNow();
@@ -440,6 +466,12 @@ export class Game {
     const d = (v) => Math.hypot(v.x - pos.x, v.z - pos.z);
     const E = `<b>${p.ctl.key('use')}</b>`;
     if (L.shop && L.shop.merchant && d(L.shop.merchant) < 3.8) out.push({ d: d(L.shop.merchant), text: `Press ${E} to shop`, act: () => this.ui.open('shop', null, p) });
+    // friendly people, your buddy and your pet
+    this.npcs.interactables(p, E, out);
+    const bud = this.buddies.of(p);
+    if (bud && !bud.dead && d(bud.pos) < 3) out.push({ d: d(bud.pos) + 0.3, text: `Press ${E} to talk to ${bud.name}`, act: () => this.ui.open('buddy', null, p) });
+    const pet = this.pets.of(p);
+    if (pet && d(pet.pos) < 2.2) out.push({ d: d(pet.pos) + 0.4, text: `Press ${E} to pet ${pet.name}`, act: () => this.pets.pat(pet) });
     if (L.bed && d(L.bed.pos) < (L.bed.radius || 1.5) + 1.8) {
       const ok = this.timeOfDay >= DAY_NIGHT.canSleepAfter || isNight(this.timeOfDay);
       out.push({ d: d(L.bed.pos), text: ok ? `Press ${E} to sleep until morning` : 'Bed <small>(you can sleep in the evening)</small>', act: () => this.sleep(p) });
@@ -534,6 +566,26 @@ export class Game {
     this.hud.toastFor(p, `Glug! You drank a ${def.name}. (${s.potions.hp + s.potions.hp_big} left)`, 'good', 2);
     if (s.potions.hp + s.potions.hp_big === 0) setTimeout(() => this.hud.toast('That was the last health potion. Buy more at a shop!', 'warn', 3), 1200);
   }
+  // eat one food from the shared bag (Bread / Carrot Soup / Apple Pie): the one that fits best
+  eatFood(p) {
+    const b = this.state.bag;
+    if (!b) return false;
+    const have = Object.keys(RECIPE_OF).filter((k) => b[k] > 0).map((k) => RECIPE_OF[k]);
+    if (!have.length) return false;
+    const missing = p.maxHp - p.hp;
+    have.sort((x, y) => Math.abs(x.heal - missing) - Math.abs(y.heal - missing));
+    const r = have[0];
+    b[r.food]--;
+    p.eatT = 4;
+    p.heal(r.heal);
+    if (r.mana) p.mana = Math.min(p.maxMana, p.mana + r.mana);
+    if (r.buff && r.buff.kind === 'speed') { p.buffs = p.buffs || {}; p.buffs.snack = Math.max(p.buffs.snack || 0, r.buff.seconds || 60); }
+    this.audio.play('potion', { pitch: 0.75 });
+    this.fx.sparkles(p.pos.clone().setY(p.pos.y + 1.2), r.color, 18, 2);
+    const left = Object.keys(RECIPE_OF).reduce((a, k) => a + (b[k] || 0), 0);
+    this.hud.toastFor(p, `Yum! You ate ${r.food === 'pie' ? 'a slice of' : 'some'} ${r.name}${r.buff ? ' - you feel speedy!' : ''} <small>(${left} food left)</small>`, 'good', 2.2);
+    return true;
+  }
   drinkMana(p = this.player) {
     const s = this.state;
     if (p.dead || !s.potions.mana) return;
@@ -548,7 +600,7 @@ export class Game {
     const s = this.state;
     if (!s) return;
     if (pk.type === 'coin') {
-      s.coins += pk.value;
+      s.coins += pk.value * (who && who.buffs && who.buffs.luck > 0 ? 2 : 1);   // Fortune Teller luck: double coins
       this.audio.play('coin', { pitch: 0.95 + Math.random() * 0.15, volume: 0.6 });
     } else if (pk.type === 'key') {
       s.keys[pk.keyFor] = true;
@@ -597,6 +649,7 @@ export class Game {
     this.audio.play('sleep');
     this.enemies.removeNight();
     await sleepMs(2600);
+    if (this.timeOfDay > DAY_NIGHT.wakeTime) this.state.day = (this.state.day || 1) + 1;   // slept through midnight
     this.timeOfDay = DAY_NIGHT.wakeTime;
     this.world.setTimeOfDay(this.timeOfDay);
     this.lastNight = false; this.enemies.wasNight = false; this.duskWarned = false;
@@ -753,16 +806,16 @@ export class Game {
     if (typeof p === 'number') { i = p; p = this.player; }
     if (i === p.charIndex) return;
     p.setCharacter(i, true);
-    const own = CHARACTERS[i].power;
-    if (this.powers.elementUsable(p, own)) { p.sel.power = own; p.sel.move = [...Array(9).keys()].find((m) => this.powers.canUse(p, own, m)) || 0; }
-    else if (!this.powers.elementUsable(p, p.sel.power)) { p.sel.power = own; p.sel.move = 0; }
+    const C = CHARACTERS[i], own = C.power;
+    if (own != null && this.powers.elementUsable(p, own)) { p.sel.power = own; p.sel.move = [...Array(9).keys()].find((m) => this.powers.canUse(p, own, m)) || 0; }
+    else this.fixSelection(p);
     this.powers.cancelCharge(p);
     this.hud.refreshHotbar();
-    this.fx.sparkles(p.pos.clone().setY(p.pos.y + 1), POWERS[own].color, 40, 4);
+    const col = own != null ? POWERS[own].color : '#ff5a4a';
+    this.fx.sparkles(p.pos.clone().setY(p.pos.y + 1), col, 40, 4);
     this.audio.play('portal', { volume: 0.5, pitch: 1.5 });
-    const his = ['bram', 'leo', 'rex', 'zane'].includes(CHARACTERS[i].id) ? 'his' : 'her';
-    this.hud.toastFor(p, `You are now ${CHARACTERS[i].name}! Power: <b style="color:${POWERS[own].color}">${POWERS[own].name}</b> - stronger when ${CHARACTERS[i].name} uses it`, 'good', 3.5);
-    void his;
+    if (own == null) this.hud.toastFor(p, `You are now ${C.name} the ${C.title}! ${p.ctl.key('sword')}: jab, cross, kick - jump + ${p.ctl.key('sword')}: flying kick! Power: any you have won`, 'good', 4);
+    else this.hud.toastFor(p, `You are now ${C.name}! Power: <b style="color:${col}">${POWERS[own].name}</b> - stronger when ${C.name} uses it`, 'good', 3.5);
     this.saveNow();
   }
 
@@ -801,7 +854,7 @@ export class Game {
     if (!s || !this.world) return null;
     const L = this.world.landmarks, id = this.worldId;
     const night = isNight(this.timeOfDay) && this.mode.id !== 'creative';
-    if (night && L.bed) return { text: 'Night! Go to sleep in the bed', pos: L.bed.pos };
+    if (night && L.bed && id !== 'home') return { text: 'Night! Go to sleep in the bed', pos: L.bed.pos };
     if (this.mode.id === 'creative') return { text: this.building ? 'Build! F = place, G = remove, R = next block' : 'Press B to build, hold Space to fly', pos: null };
     const col = (i) => `<b style="color:${POWERS[i].color}">${PORTAL_COLOR_NAMES[i]}</b>`;
     const elName = (i) => `<b style="color:${POWERS[i].color}">${POWERS[i].name}</b>`;
@@ -877,6 +930,8 @@ export class Game {
     s.character = p.charIndex;
     s.players = this.players.length;
     if (p2) { s.character2 = p2.charIndex; s.hp2 = Math.max(1, Math.round(p2.hp)); s.mana2 = Math.round(p2.mana); }
+    s.buddies = this.buddies.serialize();
+    s.pets = this.pets.serialize();
     if (this.blocksDirty || this.blocks.count || s.blocks[String(this.worldId)]) { s.blocks[String(this.worldId)] = this.blocks.serialize(); this.blocksDirty = false; }
     saveGame(s);
   }
@@ -893,11 +948,12 @@ export class Game {
     rig.root.position.copy(p.pos);
     rig.root.rotation.y = p.yaw;
     rig.root.traverse((o) => { if (o.isMesh) o.castShadow = true; });
-    rig.setSword(p.sword); rig.setArmor(p.armor); rig.setPose('idle');
+    if (CHARACTERS[i].fightStyle === 'fists') rig.setFightStyle('fists'); else rig.setSword(p.sword);
+    rig.setArmor(p.armor); rig.setPose('idle');
     this.scene.add(rig.root);
     this.preview = rig;
     p.rig.root.visible = false;
-    this.fx.sparkles(p.pos.clone().setY(p.pos.y + 1), POWERS[CHARACTERS[i].power].color, 16, 2);
+    this.fx.sparkles(p.pos.clone().setY(p.pos.y + 1), CHARACTERS[i].power != null ? POWERS[CHARACTERS[i].power].color : '#ff5a4a', 16, 2);
   }
   startHeroPicker(p) {
     const right = this.twoPlayers && p.index === 1;
@@ -1114,6 +1170,11 @@ export class Game {
         if (p.index > 0 || this.mouseLookT <= 0) p.cam.pitch = damp(p.cam.pitch, -0.26, 2, rawDt);
       }
     }
+    // food from the Cook is eaten by itself below half health (before any potion)
+    for (const p of this.players) {
+      p.eatT = Math.max(0, (p.eatT || 0) - rawDt);
+      if (!paused && !p.dead && !this.mode.invincible && this.mode.id !== 'creative' && p.hp < p.maxHp * 0.5 && p.eatT <= 0) this.eatFood(p);
+    }
     // auto health potion when health gets low
     for (const p of this.players) {
       p.autoPotT = Math.max(0, (p.autoPotT || 0) - rawDt);
@@ -1124,12 +1185,20 @@ export class Game {
       this.time += dt;
       this.state.playTime = (this.state.playTime || 0) + dt;
       const sleeping = this.players.some((p) => p.sleeping);
-      if (!sleeping) this.timeOfDay = (this.timeOfDay + dt / DAY_NIGHT.cycleSeconds) % 1;
+      if (!sleeping) {
+        const before = this.timeOfDay;
+        this.timeOfDay = (this.timeOfDay + dt / DAY_NIGHT.cycleSeconds) % 1;
+        if (this.timeOfDay < before) this.state.day = (this.state.day || 1) + 1;   // midnight: a new day
+      }
       const t = this.timeOfDay;
       const night = isNight(t);
       if (!this.duskWarned && t >= 0.72 && t < DAY_NIGHT.nightStart) {
         this.duskWarned = true;
-        if (this.mode.id !== 'creative') { this.hud.toast('Night is coming! Sleep in a bed or the night creatures will hunt you!', 'warn', 6); this.audio.play('dusk'); }
+        if (this.mode.id !== 'creative') {
+          if (this.worldId === 'home') this.hud.toast('Night is coming! Home Base is safe - night creatures only hunt on the planets.', 'info', 5);
+          else this.hud.toast('Night is coming! Sleep in a bed or the night creatures will hunt you!', 'warn', 6);
+          this.audio.play('dusk');
+        }
       }
       if (t > 0.3 && t < 0.7) this.duskWarned = false;
       if (night !== this.lastNight) { this.lastNight = night; if (!this.boss.fighting) this.audio.setMusicMood(this.moodForTime()); }
@@ -1148,6 +1217,8 @@ export class Game {
       this.allies.update(dt);
       this.trials.update(dt);
       this.npcs.update(dt);
+      this.buddies.update(dt);
+      this.pets.update(dt);
       this.blocks.update(dt, this.building && this.canControl(this.blocks.builder || P));
       this.fx.update(dt, this.time);
       for (let i = this.walls.length - 1; i >= 0; i--) { this.walls[i].t -= dt; if (this.walls[i].t <= 0) this.walls.splice(i, 1); }
@@ -1163,7 +1234,10 @@ export class Game {
       if (tip && P.rig.handR) {
         const a = P.attack;
         const emitting = !!a && a.t > a.hit * 0.4 && a.t < a.dur * 0.85;
-        this.fx.trail.update(dt, emitting, P.rig.handR.getWorldPosition(new THREE.Vector3()).lerp(tip.getWorldPosition(new THREE.Vector3()), 0.35), tip.getWorldPosition(new THREE.Vector3()));
+        const tp = tip.getWorldPosition(new THREE.Vector3());
+        // fists: a short streak behind the punching fist / kicking foot (the model moves swordTip there)
+        const from = P.fists ? tp.clone().add(new THREE.Vector3(0, 0.14, 0)) : P.rig.handR.getWorldPosition(new THREE.Vector3()).lerp(tp, 0.35);
+        this.fx.trail.update(dt, emitting, from, tp);
       } else this.fx.trail.update(dt, false);
       this.updatePortalHum();
       this.saveT -= rawDt;
@@ -1186,8 +1260,11 @@ export class Game {
     const nk = this.nightFactor();
     this.nightLights.forEach((L, i) => {
       const p = this.players[i];
-      L.intensity = p ? nk * 14 : 0;
-      if (p) L.position.set(p.pos.x, p.pos.y + 3.2, p.pos.z);
+      const lan = p && this.npcs.lanternFor(p);   // the Night Watch's lantern: a brighter, warmer light
+      L.intensity = p ? nk * (lan ? 30 : 14) : 0;
+      L.distance = lan ? 26 : 18;
+      if (lan) L.position.copy(lan).setY(lan.y + 0.4);
+      else if (p) L.position.set(p.pos.x, p.pos.y + 3.2, p.pos.z);
     });
     if (this.preview) this.preview.update(rawDt);
     if (this.helpAutoHideT > 0 && !paused) { this.helpAutoHideT -= rawDt; if (this.helpAutoHideT <= 0) this.hud.toggleHelp(false); }

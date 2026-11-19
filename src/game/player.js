@@ -45,6 +45,7 @@ export class Player {
     this.height = 1.8;
     this.radius = 0.42;
     this.buildPose = 0;
+    this.buffs = {};            // helper boosts: sharp / sage / snack / song / luck = seconds left, shield = hits left
     // power state (each player has their own)
     this.pw = { cd: POWERS.map(() => new Array(9).fill(0)), holding: false, holdT: 0, charged: false, chargeOk: false, chargeLight: null, queued: false, dash: null };
   }
@@ -56,7 +57,7 @@ export class Player {
   get maxHp() { return Math.round(this.char.stats.hp + LEVEL_UP.hp * (this.level - 1)); }
   get maxMana() { return Math.round(this.char.stats.mana + LEVEL_UP.mana * (this.level - 1)); }
   get strength() { return this.char.stats.strength + LEVEL_UP.strength * (this.level - 1); }
-  get speedMul() { return (this.char.stats.speed || 1) * (this.suit && this.suit.kind === 'storm' ? 1.25 : 1); }
+  get speedMul() { const b = this.buffs || {}; return (this.char.stats.speed || 1) * (this.suit && this.suit.kind === 'storm' ? 1.25 : 1) * (b.snack > 0 ? 1.25 : 1) * (b.song > 0 ? 1.15 : 1); }
   stat(k, d = 1) { const v = this.char.stats[k]; return v === undefined ? d : v; }
   get sword() { return SWORDS[this.state.sword]; }
   get armor() { return ARMORS[this.state.armor]; }
@@ -82,9 +83,16 @@ export class Player {
     this.lastPose = null;
     this.syncRig();
   }
+  get fists() { return this.char.fightStyle === 'fists'; }
+  // "Iron Sword" - or for Kai: "Fists (Iron power)" (the sword you bought still makes the fists stronger)
+  get weaponName() { return this.fists ? `Fists (${this.sword.name.replace(/\s*Sword$/i, '')} power)` : this.sword.name; }
   refreshGear() {
     if (!this.rig) return;
-    this.rig.setSword(this.sword);
+    if (this.fists) {
+      // punches and kicks (the model may not know fists yet: then just no sword in the hand)
+      if (this.rig.raw && typeof this.rig.raw.setFightStyle === 'function') this.rig.setFightStyle('fists');
+      else this.rig.setSword(null);
+    } else this.rig.setSword(this.sword);
     this.rig.setArmor(this.armor);
   }
   removeRig() { if (this.rig) { this.game.scene.remove(this.rig.root); this.rig.dispose(); this.rig = null; } }
@@ -124,6 +132,14 @@ export class Player {
     if (this.shieldT > 0) {
       g.hud.damageNumber(head(), 0, 'heal', 'Blocked!');
       g.fx.sparkles(this.pos.clone().setY(this.pos.y + 1.2), '#ffd34a', 8, 2);
+      return 0;
+    }
+    // the Shield Guard's magic shield blocks a few hits (not lava)
+    if (this.buffs && this.buffs.shield > 0 && !opts.silent) {
+      this.buffs.shield--;
+      g.hud.damageNumber(head(), 0, 'heal', this.buffs.shield ? `Blocked! (${this.buffs.shield} left)` : 'Blocked! Shield gone');
+      g.fx.ring(this.pos.clone().setY(this.pos.y + 1), '#c8d4e0', 2, 0.35);
+      g.audio.play('shield', { volume: 0.6 });
       return 0;
     }
     let block = opts.pierce ? 0 : (this.armor.block || 0);
@@ -175,14 +191,28 @@ export class Player {
   // ---------------------------------------------------------------- sword
   tryAttack() {
     if (this.dead || this.sleeping || this.cast) return;
+    // Kai: sword key in the air = FLYING KICK
+    if (this.fists && !this.attack && !this.onGround && this.airTime > 0.04 && !this.swimming && !this.flying) { this.startFlyingKick(); return; }
     if (this.attack) { if (this.attack.t > this.attack.dur * 0.35) this.queued = true; return; }
     this.startAttack();
+  }
+  startFlyingKick() {
+    const as = this.buffs && this.buffs.song > 0 ? 1.15 : 1;
+    const raw = this.rig.raw;
+    const a = raw && typeof raw.flyingKick === 'function' ? this.rig.flyingKick() : this.rig.attack(2);
+    this.attack = { t: 0, dur: Math.max(0.3, a.duration / as), hit: a.hitTime / as, combo: 2, didHit: false, as, kick: true };
+    this.combo = 0; this.attackChain = false;
+    this.faceNearestEnemy(6, 1.5);
+    this.vel.x += Math.sin(this.yaw) * 7; this.vel.z += Math.cos(this.yaw) * 7;
+    this.vel.y = Math.max(this.vel.y, 3.5);
+    this.game.audio.play('swing3', { pitch: 1.15 });
   }
   startAttack() {
     const now = this.time;
     this.combo = (now - this.lastAttackEnd < 0.55 && this.combo < 2 && this.attackChain) ? this.combo + 1 : 0;
     this.attackChain = true;
-    const as = this.stat('attackSpeed', 1);
+    // the hero's own attackSpeed is already in the model's timings (attack() returns real seconds); only the Bard song speeds it up here
+    const as = this.buffs && this.buffs.song > 0 ? 1.15 : 1;
     const a = this.rig.attack(this.combo);
     this.attack = { t: 0, dur: a.duration / as, hit: a.hitTime / as, combo: this.combo, didHit: false, as };
     this.game.audio.play(this.combo === 2 ? 'swing3' : this.combo === 1 ? 'swing2' : 'swing', { pitch: 0.95 + Math.random() * 0.1 });
@@ -211,9 +241,9 @@ export class Player {
 
     // regen + effects
     if (!this.dead) {
-      const mr = (3 + this.level * 0.15) * this.stat('manaRegen', 1);
+      const mr = (3 + this.level * 0.15) * this.stat('manaRegen', 1) * (this.buffs && this.buffs.sage > 0 ? 2 : 1);   // Mana Sage: x2
       this.mana = g.mode.id === 'creative' ? this.maxMana : Math.min(this.maxMana, this.mana + mr * dt);
-      const ooc = this.time - this.lastHurt > 8 ? 0.6 : 0;
+      const ooc = this.time - this.lastHurt > 8 ? 0.6 * g.diff.hpRegen : 0;
       let hr = ooc + (this.char.stats.hpRegen || 0);
       if (this.suit && this.suit.kind === 'bark') hr += this.maxHp * 0.025;
       if (hr > 0 && this.hp < this.maxHp) this.hp = Math.min(this.maxHp, this.hp + hr * dt);
@@ -229,6 +259,7 @@ export class Player {
     this.fadeT = Math.max(0, this.fadeT - dt);
     this.shieldT = Math.max(0, this.shieldT - dt);
     this.secondChanceT = Math.max(0, this.secondChanceT - dt);
+    for (const k in this.buffs) if (k !== 'shield' && this.buffs[k] > 0) this.buffs[k] = Math.max(0, this.buffs[k] - dt);
 
     // ---- tank controls: left/right turn the hero, forward/back walk
     const ctl = this.ctl;
@@ -247,7 +278,7 @@ export class Player {
     if (!g.mode.flying) this.flying = false;
 
     let speed = WALK * this.speedMul * (fwd < 0 ? 0.6 : 1);
-    if (this.attack) speed *= 0.45;
+    if (this.attack && !this.attack.kick) speed *= 0.45;
     if (this.cast) speed *= 0.55;
     if (this.swimming) speed *= 0.6;
     if (this.inLava) speed *= 0.6;
@@ -336,7 +367,7 @@ export class Player {
     if (this.attack) {
       const a = this.attack;
       a.t += dt;
-      if (!a.didHit && a.t >= a.hit) { a.didHit = true; g.combat.playerSwing(this, a.combo); }
+      if (!a.didHit && a.t >= a.hit) { a.didHit = true; g.combat.playerSwing(this, a.combo, { kick: !!a.kick }); }
       if (a.t >= a.dur) {
         this.attack = null; this.lastAttackEnd = this.time;
         if (this.queued) { this.queued = false; this.startAttack(); }

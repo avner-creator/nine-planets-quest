@@ -25,6 +25,7 @@ function seg(a, b, r0, r1, n = 8, caps = true) {
   const pts = [a, a.clone().lerp(b, 0.5), b];
   return tube(pts, (t) => lerp(r0, r1, t), n, { caps });
 }
+const pick = (r, a) => a[Math.floor(r() * a.length)];
 const has = (name, ...w) => w.some((x) => name.toLowerCase().includes(x));
 
 // ------------------------------------------------------------------ Mob base (custom skinned rigs)
@@ -1210,5 +1211,208 @@ export function createSummon(kind = 'spirit', { color, quality = 'high' } = {}) 
   mob.friendly = true; mob.summonKind = kind;
   mob.baseRim = { color: c, strength: 0.45 };
   if (mob._look) mob._look();
+  return mob;
+}
+
+// ------------------------------------------------------------------ friendly animals
+// createCritter(kind, { quality, seed }) -> Mob (setPose 'idle'|'move'|'dead', setMoveSpeed, attack = cute hop, update, dispose)
+// kinds: dog, cat, chicken, rabbit, deer, penguin. One draw call, about 1.5-2.5k triangles.
+const CRIT = {
+  dog: { Y: 0.36, L: 0.3, rx: 0.105, ry: 0.115, leg: [0.14, 0.17], legR: 0.04, head: [0.085, 0.08, 0.095], neck: [0.1, 0.13], snout: [0.11, 0.042], ear: 'flop', tail: 'wag', colors: ['#b07a40', '#3a3028', '#e8d8c0', '#8a5a30', '#d8b080'], belly: '#efe0c8', collar: '#d83a3a' },
+  cat: { Y: 0.23, L: 0.19, rx: 0.065, ry: 0.07, leg: [0.1, 0.11], legR: 0.02, head: [0.06, 0.055, 0.06], neck: [0.06, 0.08], snout: [0.03, 0.026], ear: 'point', tail: 'cat', colors: ['#e8a050', '#5a5a60', '#2a2a2a', '#f0eee8', '#c89060'], belly: '#f4ece0', eyes: '#9ad040', stripes: true },
+  deer: { Y: 0.8, L: 0.42, rx: 0.12, ry: 0.14, leg: [0.38, 0.4], legR: 0.036, head: [0.065, 0.07, 0.1], neck: [0.25, 0.4], snout: [0.11, 0.04], ear: 'deer', tail: 'puff', colors: ['#a06a3a', '#8a5a30', '#b07a48'], belly: '#f0e4d0', antlers: true },
+  rabbit: { Y: 0.15, L: 0.12, rx: 0.075, ry: 0.08, leg: [0.06, 0.07], legR: 0.018, head: [0.055, 0.055, 0.06], neck: [0.04, 0.06], snout: [0.03, 0.028], ear: 'long', tail: 'puff', colors: ['#c8b8a8', '#f4f2ee', '#8a6a4a', '#5a5048'], belly: '#f4f0ea', hop: true },
+};
+function critterQuadT(kind, seed, q) {
+  const k = CRIT[kind], r = rng(seed * 131 + hashStr(kind));
+  const c = col(pick(r, k.colors)), belly = mixc(c, k.belly, 0.7);
+  const B = new Builder({ seed: hashStr(kind) + seed });
+  const { Y, L } = k, s = 1;
+  B.bone('body', null, 0, Y, 0);
+  B.bone('neck', 'body', 0, Y + k.ry * 0.4, L * 0.75);
+  B.bone('head', 'neck', 0, Y + k.neck[1], L + k.neck[0] * 0.4);
+  B.bone('earL', 'head', 0.6 * k.head[0], Y + k.neck[1] + k.head[1] * 0.7, L + k.neck[0] * 0.4);
+  B.bone('earR', 'head', -0.6 * k.head[0], Y + k.neck[1] + k.head[1] * 0.7, L + k.neck[0] * 0.4);
+  B.bone('tail0', 'body', 0, Y + k.ry * 0.3, -L);
+  B.bone('tail1', 'tail0', 0, Y + k.ry * 0.3, -L - 0.12 * (L / 0.3));
+  const lx = k.rx * 0.7;
+  for (const [F, z] of [['f', L * 0.62], ['b', -L * 0.62]]) for (const [sd, S] of [[1, 'L'], [-1, 'R']]) {
+    B.bone(F + 'u' + S, 'body', sd * lx, Y - k.ry * 0.3, z);
+    B.bone(F + 'l' + S, F + 'u' + S, sd * lx, Y - k.ry * 0.3 - k.leg[0], z + (F === 'b' ? -0.02 : 0.005));
+  }
+  const fur = { cell: kind === 'deer' ? 'fur' : 'fur', color: c };
+  const stripes = k.stripes && r() < 0.7 ? (p, n, cc) => (Math.sin(p.z * 70 + Math.sin(p.x * 30)) > 0.45 && n.y > -0.2 ? cc.multiplyScalar(0.72) : cc) : null;
+  const bellyFn = (p, n, cc) => { if (n.y < -0.4) cc.copy(belly); return stripes ? stripes(p, n, cc) : cc; };
+  const zW = B.ladder('z', [['body', -L * 0.2], ['neck', L * 0.9]]);
+  B.add(blob(k.rx, k.ry, L + 0.04 * (L / 0.3), 1, 1, Math.round(14 * q) + 2, Math.round(10 * q) + 2, (p) => { if (p.z > 0) p.y += 0.15 * k.ry * (p.z / L); }), { ...fur, pos: [0, Y, 0], bone: 'body', colorFn: bellyFn });
+  const hp = B.bpos('head');
+  B.add(seg(V3(0, Y + k.ry * 0.4, L * 0.7), hp.clone().add(V3(0, -k.head[1] * 0.4, -k.head[2] * 0.4)), k.ry * (kind === 'deer' ? 0.55 : 0.75), k.head[0] * 0.75, 8), { ...fur, w: zW, colorFn: kind === 'deer' ? bellyFn : null });
+  B.add(blob(k.head[0], k.head[1], k.head[2], 1, 1, 12, 9), { ...fur, pos: hp.toArray(), bone: 'head', colorFn: stripes });
+  const sn = hp.clone().add(V3(0, -k.head[1] * 0.35, k.head[2] * 0.75));
+  B.add(blob(k.snout[1], k.snout[1] * 0.8, k.snout[0] * 0.55, 1, 1, 9, 6), { ...fur, color: kind === 'cat' || kind === 'rabbit' ? belly : c, pos: [sn.x, sn.y, sn.z + k.snout[0] * 0.25], bone: 'head' });
+  B.add(sphere(k.snout[1] * 0.38, 6, 4), { pos: [sn.x, sn.y + k.snout[1] * 0.35, sn.z + k.snout[0] * 0.78], cell: 'gloss', color: kind === 'cat' || kind === 'rabbit' ? '#e88a9a' : '#1a1414', rough: 0.25, bone: 'head' });
+  for (const sd of [-1, 1]) {
+    const ep = hp.clone().add(V3(sd * k.head[0] * 0.55, k.head[1] * 0.2, k.head[2] * 0.62));
+    B.add(sphere(k.head[0] * 0.2, 8, 6), { pos: ep.toArray(), cell: 'gloss', color: k.eyes || '#1a120c', rough: 0.05, bone: 'head' });
+    B.add(sphere(k.head[0] * 0.06, 4, 3), { pos: [ep.x + 0.004, ep.y + 0.005, ep.z + k.head[0] * 0.17], cell: 'gloss', color: '#ffffff', glow: 1.5, bone: 'head' });
+    if (kind === 'cat' && k.eyes) B.add(sphere(k.head[0] * 0.07, 4, 3), { pos: [ep.x, ep.y, ep.z + k.head[0] * 0.19], scl: [0.5, 1.6, 0.4], cell: 'gloss', color: '#0a0a0a', bone: 'head' });
+    const E = 'ear' + (sd > 0 ? 'L' : 'R'), ebp = B.bpos(E);
+    if (k.ear === 'flop') B.add(blob(0.018, 0.06, 0.035, 1, 1, 8, 6), { pos: [ebp.x + sd * 0.02, ebp.y - 0.035, ebp.z - 0.01], rot: [0, 0, sd * 0.35], ...fur, color: shade(c, 0.7), bone: E });
+    else if (k.ear === 'point') B.add(cone(k.head[0] * 0.42, 0, k.head[0] * 0.9, 4), { pos: [ebp.x, ebp.y - 0.005, ebp.z], rot: [0, 0, -sd * 0.25], scl: [1, 1, 0.45], ...fur, bone: E });
+    else if (k.ear === 'deer') B.add(blob(0.018, 0.045, 0.028, 1, 1, 8, 6), { pos: [ebp.x + sd * 0.04, ebp.y, ebp.z - 0.02], rot: [0, 0, -sd * 1.0], ...fur, bone: E });
+    else { B.add(blob(0.018, 0.075, 0.03, 1, 1, 8, 6), { pos: [ebp.x, ebp.y + 0.065, ebp.z - 0.01], rot: [-0.25, 0, -sd * 0.15], ...fur, bone: E }); B.add(blob(0.008, 0.055, 0.018, 1, 1, 6, 4), { pos: [ebp.x, ebp.y + 0.065, ebp.z + 0.005], rot: [-0.25, 0, -sd * 0.15], cell: 'skin', color: '#e8a8a8', bone: E }); }
+    if (k.antlers) { const a0 = hp.clone().add(V3(sd * 0.03, k.head[1] * 0.8, -0.01)); const pts = [a0, a0.clone().add(V3(sd * 0.06, 0.12, -0.03)), a0.clone().add(V3(sd * 0.1, 0.22, 0.0)), a0.clone().add(V3(sd * 0.09, 0.32, 0.04))];
+      B.add(tube(pts, (t) => lerp(0.012, 0.004, t), 5), { cell: 'bone', color: '#c8b088', bone: 'head' });
+      for (const j of [1, 2]) B.add(seg(pts[j], pts[j].clone().add(V3(sd * 0.01, 0.07, 0.06)), 0.007, 0.003, 4), { cell: 'bone', color: '#c8b088', bone: 'head' }); }
+  }
+  if (k.collar) B.add(torus(k.head[0] * 0.95, 0.012, 14, 4), { pos: [0, Y + k.neck[1] * 0.55, L + k.neck[0] * 0.05], rot: [PI / 2 - 0.6, 0, 0], cell: 'leather', color: k.collar, w: zW });
+  // legs
+  for (const [F] of [['f'], ['b']]) for (const [sd, S] of [[1, 'L'], [-1, 'R']]) {
+    const u = B.bpos(F + 'u' + S), l = B.bpos(F + 'l' + S), p = l.clone().add(V3(0, -k.leg[1], 0));
+    if (kind === 'rabbit' && F === 'b') B.add(blob(0.04, 0.055, 0.07, 1, 1, 8, 6), { ...fur, pos: [u.x + sd * 0.012, u.y + 0.01, u.z + 0.02], bone: F + 'u' + S });
+    B.add(seg(u.clone().add(V3(0, 0.02, 0)), l, k.legR * (F === 'b' ? 1.3 : 1.1), k.legR * 0.85, 5), { ...fur, bone: F + 'u' + S });
+    B.add(seg(l, p, k.legR * 0.8, k.legR * 0.65, 5), { ...fur, color: kind === 'deer' ? shade(c, 0.85) : c, bone: F + 'l' + S });
+    B.add(blob(k.legR * 1.05, k.legR * 0.6, k.legR * (kind === 'rabbit' && F === 'b' ? 2.6 : 1.5), 1, 1, 7, 5), { pos: [p.x, p.y + k.legR * 0.4, p.z + k.legR * 0.6], cell: kind === 'deer' ? 'chitin' : 'fur', color: kind === 'deer' ? '#2a2018' : kind === 'dog' ? shade(c, 0.85) : belly, bone: F + 'l' + S });
+  }
+  // tail
+  const t0 = B.bpos('tail0'), t1 = B.bpos('tail1');
+  const tw = B.ladder('z', [['tail1', t1.z + 0.02], ['tail0', t0.z]]);
+  if (k.tail === 'puff') B.add(sphere(kind === 'deer' ? 0.04 : 0.035, 8, 6), { pos: [t0.x, t0.y + 0.02, t0.z - 0.02], cell: 'fur', color: '#f8f6f0', bone: 'tail0' });
+  else if (k.tail === 'wag') B.add(tube([t0.clone(), t0.clone().add(V3(0, 0.06, -0.06)), t1.clone().add(V3(0, 0.12, -0.02)), t1.clone().add(V3(0, 0.2, 0.0))], (t) => lerp(0.022, 0.012, t), 6), { ...fur, w: tw });
+  else B.add(tube([t0.clone(), t0.clone().add(V3(0, 0.04, -0.07)), t1.clone().add(V3(0, 0.1, -0.06)), t1.clone().add(V3(0, 0.2, -0.02))], (t) => lerp(0.014, 0.01, t), 6), { ...fur, w: tw, colorFn: stripes });
+  return { tpl: B.build(), kind, k };
+}
+function critterQuadPoses(J, info) {
+  const { kind, k } = info;
+  const legs = (P, ph, a) => {
+    for (const [F, S, off] of [['f', 'L', 0], ['b', 'R', 0], ['f', 'R', PI], ['b', 'L', PI]]) {
+      const p = ph + off, sn = Math.sin(p), sw = Math.max(0, Math.cos(p + 0.4));
+      P.e(J[F + 'u' + S], -0.4 * sn * a + (F === 'b' ? -0.1 : 0.05), 0, 0);
+      P.e(J[F + 'l' + S], F === 'f' ? 0.7 * sw * a : 0.25 + 0.4 * sw * a, 0, 0);
+    }
+  };
+  const tail = (P, t, wag) => { P.e(J.tail0, 0.1, wag, 0); P.e(J.tail1, 0.1, wag * 0.8, 0); };
+  return {
+    idle(P, t) {
+      const b = Math.sin(t * 2.5);
+      P.off(J.body, 0, 0.004 * b, 0);
+      P.e(J.head, 0.05 * Math.sin(t * 0.7), 0.35 * Math.sin(t * 0.45), 0.08 * Math.sin(t * 0.3));
+      P.e(J.earL, 0.15 * Math.max(0, Math.sin(t * 1.3 + 2)) ** 8); P.e(J.earR, 0.15 * Math.max(0, Math.sin(t * 1.1)) ** 8);
+      legs(P, 0, 0);
+      if (kind === 'dog') tail(P, t, 0.6 * Math.sin(t * 14));
+      else if (kind === 'cat') { // sit: back legs folded, body tilted up
+        P.e(J.body, -0.55); P.off(J.body, 0, -0.05, -0.02);
+        P.e(J.buL, -0.7); P.e(J.blL, 1.7); P.e(J.buR, -0.7); P.e(J.blR, 1.7); P.e(J.fuL, 0.55); P.e(J.fuR, 0.55); P.e(J.neck, 0.35);
+        P.e(J.tail0, 1.0, 0.3 * Math.sin(t * 0.9), 0); P.e(J.tail1, 0.5, 0.5 * Math.sin(t * 0.9 - 1), 0);
+      } else if (kind === 'deer') { // graze: neck down to the grass now and then
+        const u = (t % 9) / 9, g = sstep(0.05, 0.15, u) * (1 - sstep(0.55, 0.65, u));
+        P.e(J.neck, 1.25 * g, 0.2 * Math.sin(t * 0.5) * (1 - g), 0); P.e(J.head, 0.3 * g + 0.08 * g * Math.sin(t * 6), 0, 0); tail(P, t, 0.1 * Math.sin(t * 3));
+      } else if (kind === 'rabbit') {
+        const u = (t % 4) / 4, h = u > 0.85 ? Math.sin((u - 0.85) / 0.15 * PI) : 0;
+        P.off(J.body, 0, 0.05 * h, 0); P.e(J.body, -0.2 * h); P.e(J.head, 0.05 * Math.sin(t * 9) ** 2);
+      }
+    },
+    move(P, t, c) {
+      const ph = c.phase * 0.55;
+      if (k.hop) {
+        const u = (ph / TAU) % 1, air = Math.sin(u * PI);
+        P.off(J.body, 0, 0.09 * air, 0); P.e(J.body, -0.3 * Math.cos(u * PI));
+        for (const S of ['L', 'R']) { P.e(J['bu' + S], -0.6 + 1.2 * u); P.e(J['bl' + S], 0.6 * (1 - air)); P.e(J['fu' + S], -0.8 * air); P.e(J['fl' + S], 0.2); }
+        P.e(J.earL, -0.3 * air); P.e(J.earR, -0.3 * air);
+        return;
+      }
+      P.off(J.body, 0, 0.012 * Math.cos(2 * ph), 0);
+      P.e(J.neck, kind === 'deer' ? 0.1 : 0, 0.05 * Math.sin(ph), 0);
+      P.e(J.head, 0.05 * Math.sin(2 * ph), 0, 0);
+      legs(P, ph, 1);
+      tail(P, t, kind === 'dog' ? 0.5 * Math.sin(t * 12) : 0.25 * Math.sin(ph));
+    },
+    dead(P, t) { const u = sstep(0, 0.5, t); P.e(J.body, 0, 0, 1.4 * u); P.off(J.body, 0, -k.Y * 0.6 * u, 0); legs(P, 0, 0); },
+  };
+}
+function critterBirdT(kind, seed, q) {
+  const r = rng(seed * 17 + hashStr(kind));
+  const peng = kind === 'penguin';
+  const B = new Builder({ seed: hashStr(kind) + seed });
+  const c = col(peng ? '#1e2028' : pick(r, ['#f4f0e8', '#b8642a', '#3a2a20', '#e8d8b0'])), white = col('#f6f4ee');
+  const Y = peng ? 0.08 : 0.24;
+  B.bone('body', null, 0, Y, 0);
+  B.bone('head', 'body', 0, peng ? 0.46 : 0.35, peng ? 0.02 : 0.11);
+  B.bone('tail', 'body', 0, peng ? 0.12 : 0.23, peng ? -0.1 : -0.13);
+  for (const [sd, S] of [[1, 'L'], [-1, 'R']]) {
+    B.bone('wing' + S, 'body', sd * (peng ? 0.11 : 0.08), peng ? 0.36 : 0.25, peng ? 0 : 0.0);
+    B.bone('leg' + S, 'body', sd * (peng ? 0.05 : 0.04), peng ? 0.08 : 0.14, peng ? 0.01 : 0.0);
+  }
+  const hp = B.bpos('head');
+  if (peng) {
+    B.add(blob(0.13, 0.21, 0.115, 1, 1, Math.round(14 * q) + 2, Math.round(12 * q) + 2, (p) => { if (p.y < 0) { p.x *= 1 + 0.1 * (-p.y / 0.21); p.z *= 1 + 0.08 * (-p.y / 0.21); } }), { pos: [0, 0.26, 0], cell: 'gloss', color: c, rough: 0.35, bone: 'body', colorFn: (p, n, cc) => (n.z > 0.35 && p.y < 0.42 ? cc.copy(white) : cc) });
+    B.add(sphere(0.085, 12, 9), { pos: hp.toArray(), cell: 'gloss', color: c, rough: 0.35, bone: 'head' });
+    for (const sd of [-1, 1]) {
+      B.add(sphere(0.026, 8, 6), { pos: [sd * 0.04, hp.y + 0.015, hp.z + 0.065], scl: [1, 1, 0.5], cell: 'gloss', color: white, bone: 'head' });
+      B.add(sphere(0.012, 6, 4), { pos: [sd * 0.04, hp.y + 0.015, hp.z + 0.077], cell: 'gloss', color: '#0a0a0a', bone: 'head' });
+      B.add(sphere(0.004, 4, 3), { pos: [sd * 0.04 + 0.004, hp.y + 0.02, hp.z + 0.088], cell: 'gloss', color: '#ffffff', glow: 1.5, bone: 'head' });
+      const W = 'wing' + (sd > 0 ? 'L' : 'R'), wp = B.bpos(W);
+      B.add(blob(0.018, 0.13, 0.05, 1, 1, 8, 6), { pos: [wp.x + sd * 0.01, wp.y - 0.11, wp.z], rot: [0, 0, sd * 0.15], cell: 'gloss', color: c, rough: 0.35, bone: W });
+      const L2 = 'leg' + (sd > 0 ? 'L' : 'R'), lp = B.bpos(L2);
+      B.add(blob(0.04, 0.012, 0.06, 1, 1, 8, 5), { pos: [lp.x, 0.012, lp.z + 0.04], cell: 'skin', color: '#f08a2a', bone: L2 });
+    }
+    B.add(cone(0.022, 0, 0.07, 6), { pos: [0, hp.y - 0.01, hp.z + 0.07], rot: [PI / 2 + 0.1, 0, 0], scl: [1, 1, 0.7], cell: 'gloss', color: '#f08a2a', bone: 'head' });
+    B.add(blob(0.05, 0.02, 0.06, 1, 1, 8, 5), { pos: [0, 0.39, 0.08], cell: 'gloss', color: '#f0c040', glow: 0, bone: 'body' });
+    B.add(cone(0.05, 0, 0.08, 5), { pos: [0, 0.1, -0.1], rot: [-2.3, 0, 0], scl: [1, 1, 0.3], cell: 'gloss', color: c, bone: 'tail' });
+  } else {
+    B.add(blob(0.11, 0.1, 0.14, 1, 1, Math.round(14 * q) + 2, Math.round(10 * q) + 2, (p) => { if (p.z < 0) p.y += 0.5 * (-p.z) * 0.6; }), { pos: [0, 0.23, 0], cell: 'fur', color: c, bone: 'body' });
+    B.add(seg(V3(0, 0.26, 0.08), V3(0, hp.y - 0.02, hp.z - 0.01), 0.055, 0.04, 8), { cell: 'fur', color: c, w: B.ladder('y', [['body', 0.27], ['head', hp.y - 0.04]]) });
+    B.add(sphere(0.048, 10, 8), { pos: hp.toArray(), cell: 'fur', color: c, bone: 'head' });
+    for (let i = 0; i < 3; i++) B.add(sphere(0.017 - i * 0.002, 6, 4), { pos: [0, hp.y + 0.045 + (i === 1 ? 0.008 : 0), hp.z + 0.02 - i * 0.022], cell: 'gloss', color: '#e0302a', bone: 'head' });
+    B.add(blob(0.012, 0.022, 0.01, 1, 1, 6, 4), { pos: [0, hp.y - 0.035, hp.z + 0.04], cell: 'gloss', color: '#e0302a', bone: 'head' });
+    B.add(cone(0.014, 0, 0.035, 5), { pos: [0, hp.y - 0.005, hp.z + 0.045], rot: [PI / 2, 0, 0], cell: 'gloss', color: '#f0b030', bone: 'head' });
+    for (const sd of [-1, 1]) {
+      B.add(sphere(0.009, 6, 4), { pos: [sd * 0.03, hp.y + 0.01, hp.z + 0.03], cell: 'gloss', color: '#120a06', bone: 'head' });
+      const W = 'wing' + (sd > 0 ? 'L' : 'R'), wp = B.bpos(W);
+      B.add(blob(0.022, 0.06, 0.1, 1, 1, 8, 6), { pos: [wp.x + sd * 0.025, wp.y - 0.02, wp.z - 0.02], rot: [0.2, 0, 0], cell: 'fur', color: shade(c, 0.9), bone: W });
+      const L2 = 'leg' + (sd > 0 ? 'L' : 'R'), lp = B.bpos(L2);
+      B.add(seg(lp, V3(lp.x, 0.02, lp.z + 0.01), 0.008, 0.006, 4), { cell: 'skin', color: '#f0b030', bone: L2 });
+      for (const a of [-0.5, 0, 0.5]) B.add(cone(0.005, 0, 0.045, 3), { pos: [lp.x, 0.008, lp.z + 0.01], rot: [PI / 2 - 0.1, a, 0], cell: 'skin', color: '#f0b030', bone: L2 });
+    }
+    for (let i = 0; i < 4; i++) B.add(cone(0.035, 0, 0.13 - i * 0.015, 4), { m: matDir(V3(0, 0.29, -0.12), V3((i - 1.5) * 0.15, 1, -0.8), [1, 1, 0.3]), cell: 'fur', color: i % 2 ? shade(c, 0.6) : c, bone: 'tail' });
+  }
+  return { tpl: B.build(), kind };
+}
+function critterBirdPoses(J, info) {
+  const peng = info.kind === 'penguin';
+  return {
+    idle(P, t) {
+      if (peng) { P.e(J.body, 0, 0.1 * Math.sin(t * 0.5), 0.04 * Math.sin(t * 1.1)); P.e(J.head, 0.1 * Math.sin(t * 0.7), 0.4 * Math.sin(t * 0.4), 0); const f = Math.max(0, Math.sin(t * 1.7)) ** 6; P.e(J.wingL, 0, 0, 0.5 * f); P.e(J.wingR, 0, 0, -0.5 * f); return; }
+      const u = (t % 2.6) / 2.6, peck = u < 0.35 ? Math.sin(u / 0.35 * PI * 2) ** 2 : 0;
+      P.e(J.body, 0.35 * (u < 0.35 ? 1 : 0) * sstep(0, 0.05, u), 0.2 * Math.sin(t * 0.6), 0);
+      P.e(J.head, 0.9 * peck, 0.5 * Math.sin(t * 1.1) * (u > 0.4 ? 1 : 0), 0);
+      const sc = (t % 5.3) / 5.3 > 0.85 ? Math.sin(((t % 5.3) / 5.3 - 0.85) / 0.15 * PI * 3) : 0; P.e(J.legL, -0.4 * Math.max(0, sc), 0, 0);
+      P.e(J.tail, 0.1 * Math.sin(t * 2));
+    },
+    move(P, t, c) {
+      const ph = c.phase * (peng ? 0.7 : 1.1), sn = Math.sin(ph);
+      if (peng) { P.e(J.body, 0, 0.05 * sn, 0.16 * sn); P.off(J.body, 0, 0.012 * Math.abs(Math.cos(ph)), 0); P.e(J.legL, -0.35 * Math.max(0, sn), 0, 0); P.e(J.legR, -0.35 * Math.max(0, -sn), 0, 0); P.e(J.wingL, 0, 0, 0.45 + 0.1 * sn); P.e(J.wingR, 0, 0, -0.45 + 0.1 * sn); P.e(J.head, -0.05, 0, -0.08 * sn); return; }
+      P.e(J.body, 0.15, 0.08 * sn, 0); P.off(J.body, 0, 0.01 * Math.abs(Math.cos(ph)), 0);
+      P.e(J.legL, -0.6 * sn, 0, 0); P.e(J.legR, 0.6 * sn, 0, 0);
+      P.off(J.head, 0, 0, 0.02 * Math.sin(2 * ph)); P.e(J.head, 0.1 * Math.sin(2 * ph));
+      P.e(J.wingL, 0, 0, 0.1 * Math.max(0, Math.sin(t * 9))); P.e(J.wingR, 0, 0, -0.1 * Math.max(0, Math.sin(t * 9)));
+    },
+    dead(P, t) { const u = sstep(0, 0.5, t); P.e(J.body, 0, 0, 1.4 * u); P.off(J.body, 0, -0.04 * u, 0); },
+  };
+}
+const critterActions = (J) => ({
+  attack: () => ({ dur: 0.55, hit: 0.3, keys: [[0, () => {}], [0.12, (P) => { P.addOff(J.body, 0, -0.02, 0); }, 'o'], [0.3, (P) => { P.addOff(J.body, 0, 0.16, 0.05); P.r(J.body, -0.25); }, 'o'], [0.55, () => {}]] }),
+});
+export function createCritter(kind = 'dog', { quality = 'high', seed = 1 } = {}) {
+  const q = quality === 'low' ? 0.65 : 0.85;
+  const bird = kind === 'chicken' || kind === 'penguin';
+  if (!bird && !CRIT[kind]) kind = 'dog';
+  const key = 'critter|' + kind + '|' + seed + '|' + q;
+  let T = TPL.get(key);
+  if (!T) { T = bird ? critterBirdT(kind, seed, q) : critterQuadT(kind, seed, q); TPL.set(key, T); }
+  const dims = { dog: [0.58, 0.35, 0.72], cat: [0.36, 0.22, 0.45], deer: [1.45, 0.5, 1.6], rabbit: [0.3, 0.18, 0.4], chicken: [0.42, 0.16, 0.52], penguin: [0.56, 0.2, 0.68] }[kind];
+  const mob = new MobBase(T.tpl, { size: 1, def: { name: kind }, height: dims[0], radius: dims[1], hitHeight: dims[2], moveRate: bird ? 1.6 : kind === 'rabbit' ? 1.4 : kind === 'cat' ? 1.1 : 0.8,
+    poses: (J) => (bird ? critterBirdPoses(J, T) : critterQuadPoses(J, T)), actions: critterActions });
+  mob.kind = kind; mob.friendly = true; mob.critter = true;
   return mob;
 }

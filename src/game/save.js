@@ -1,5 +1,5 @@
 // Save games (one per mode) + settings, in localStorage.
-import { SAVE_KEY, MODES, DAY_NIGHT, CHARACTERS } from '../data.js';
+import { SAVE_KEY, MODES, DAY_NIGHT, CHARACTERS, DIFFICULTIES, DEFAULT_DIFFICULTY } from '../data.js';
 
 export const DEFAULT_SETTINGS = { quality: 'high', sensitivity: 1, invertY: false, volume: 0.8, music: true, showHelp: true };
 
@@ -17,13 +17,14 @@ export function loadSettings() {
 }
 export function saveSettings(s) { writeJSON(`${SAVE_KEY}.settings`, s); }
 
-export function newGameState(modeId, character = 0, players = 1) {
+export function newGameState(modeId, character = 0, players = 1, difficulty = DEFAULT_DIFFICULTY) {
   const mode = MODES.find((m) => m.id === modeId) || MODES[1];
   const all = mode.id === 'creative';
   return {
     v: 3,
     mode: mode.id,
     players,
+    difficulty: mode.id === 'creative' ? 'easy' : difficulty,   // easy | medium | hard (old saves: medium)
     character,
     character2: 3,                          // player 2 starts as Leo
     level: 1,
@@ -53,6 +54,12 @@ export function newGameState(modeId, character = 0, players = 1) {
     sel: [{ power: CHARACTERS[character].power, move: 0 }, { power: CHARACTERS[3].power, move: 0 }],
     victoryShown: false,
     hp: null, mana: null, hp2: null, mana2: null,
+    buddies: [], pets: [],                  // per player: the buddy / pet that follows you
+    bag: {},                                // crops + food (shared): wheat, carrot, apple, bread, soup, pie
+    mapped: {},                             // worldKey -> true (Map Maker)
+    sideQuest: null,                        // { world, type, name, n, got, label, coins, xp, giver }
+    day: 1, bankDay: 0,                     // in-game day counter (Coin Keeper gift once a day)
+    dojo: all,                              // Kai the Dojo Master unlocked (Creative: from the start)
   };
 }
 
@@ -61,6 +68,10 @@ function migrate(s) {
   const base = newGameState(s.mode, s.character || 0, s.players || 1);
   const g = { ...base, ...s };
   g.potions = { ...base.potions, ...(s.potions || {}) };
+  if (!g.bag || typeof g.bag !== 'object') g.bag = {};
+  if (!g.mapped || typeof g.mapped !== 'object') g.mapped = {};
+  if (!Array.isArray(g.pets)) g.pets = [];
+  if (g.mode === 'creative') g.dojo = true;
   const ok9 = (a) => Array.isArray(a) && a.length === 9;
   if (!ok9(g.bosses)) g.bosses = base.bosses;
   if (!ok9(g.keys)) g.keys = base.keys;
@@ -97,6 +108,8 @@ function migrate(s) {
   g.portalsOpen[0] = true;
   if (g.mode === 'creative') g.portalsOpen = Array(9).fill(true);
   if (g.players !== 2) g.players = 1;
+  if (!DIFFICULTIES.some((d) => d.id === g.difficulty)) g.difficulty = DEFAULT_DIFFICULTY;
+  if (g.mode === 'creative') g.difficulty = 'easy';
   delete g.powers; delete g.temples; delete g.selectedPower;
   return g;
 }

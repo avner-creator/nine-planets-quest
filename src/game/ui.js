@@ -1,13 +1,21 @@
 // Menus and overlay screens (DOM). Everything works with the keyboard: the player who opened a menu drives it
 // with their own move keys (P1: W A S D or arrows when alone, P2: arrows) and presses with their use / power /
 // sword / jump key or Enter. Esc goes back.
-import { MODES, CHARACTERS, SWORDS, ARMORS, POTIONS, POWERS, DIMENSIONS, GAME_TITLE, POWER_ATTACKS } from '../data.js';
+import { MODES, CHARACTERS, SWORDS, ARMORS, POTIONS, POWERS, DIMENSIONS, GAME_TITLE, POWER_ATTACKS, DIFFICULTIES, DEFAULT_DIFFICULTY, FRIENDLY_NPCS } from '../data.js';
 import { powerIcon, swordIcon, armorIcon, potionIcon, coinIcon, lockIcon, portraitIcon, lootIcon, img } from './icons.js';
 import { loadGame } from './save.js';
 import { fmt } from './util.js';
+import { ICON } from './npcs.js';
 import { ROMAN } from './powers.js';
 
 const h = (html) => { const t = document.createElement('template'); t.innerHTML = html.trim(); return t.content.firstElementChild; };
+const DIFF_FACE = {
+  easy: '<svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="26" fill="#5fd36a" stroke="#fff" stroke-width="3"/><circle cx="23" cy="27" r="4" fill="#1a3a1a"/><circle cx="41" cy="27" r="4" fill="#1a3a1a"/><path d="M19 38q13 13 26 0" fill="none" stroke="#1a3a1a" stroke-width="4" stroke-linecap="round"/></svg>',
+  medium: '<svg viewBox="0 0 64 64"><circle cx="32" cy="32" r="26" fill="#ffd34a" stroke="#fff" stroke-width="3"/><circle cx="23" cy="27" r="4" fill="#4a3a10"/><circle cx="41" cy="27" r="4" fill="#4a3a10"/><path d="M21 41h22" stroke="#4a3a10" stroke-width="4" stroke-linecap="round"/></svg>',
+  hard: '<svg viewBox="0 0 64 64"><path d="M32 2c4 8 12 10 12 10s6-5 5-10c8 8 11 18 9 28L32 58 6 30C4 20 8 10 15 2c0 5 5 10 5 10s8-2 12-10Z" fill="#ff9a3a"/><circle cx="32" cy="36" r="22" fill="#ff5a4a" stroke="#fff" stroke-width="3"/><path d="M19 27l9 4M45 27l-9 4" stroke="#3a1010" stroke-width="4" stroke-linecap="round"/><circle cx="24" cy="34" r="3.5" fill="#3a1010"/><circle cx="40" cy="34" r="3.5" fill="#3a1010"/><path d="M22 47q10-7 20 0" fill="none" stroke="#3a1010" stroke-width="4" stroke-linecap="round"/></svg>',
+};
+const ICON_FIST = 'data:image/svg+xml;utf8,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect x="5" y="7" width="14" height="11" rx="4" fill="#f2c6a0" stroke="#7a3a2a" stroke-width="1.4"/><path d="M9 7v5M13 7v5M17 8v4" stroke="#7a3a2a" stroke-width="1.2"/><rect x="6" y="17" width="12" height="4" rx="1" fill="#c4242b"/></svg>');
+const diffName = (id) => (DIFFICULTIES.find((d) => d.id === id) || DIFFICULTIES.find((d) => d.id === DEFAULT_DIFFICULTY)).name;
 const SHORT_BIO = {
   aria: 'Fast and nimble.', bram: 'Lots of health.', kira: 'Super fast sword.', leo: 'Strong healing.',
   luna: 'Lots of mana.', rex: 'Hits the hardest.', nova: 'Finds extra coins.', ivy: 'Heals by herself.', zane: 'Sneaky surprise hits.',
@@ -124,7 +132,7 @@ export class UI {
       if (f && f.type !== 'range') { g.input.pressed.clear(); f.click(); setTimeout(() => this.autoFocusIfLost(), 0); }
       return true;
     }
-    if (this.overlay === 'switcher' && /^Digit[1-9]$/.test(code)) { const i = +code.slice(5) - 1; const el = layer.querySelector(`[data-i="${i}"]`); if (el) this.setFocus(el); return true; }
+    if (this.overlay === 'switcher' && /^Digit[0-9]$/.test(code)) { const i = (+code.slice(5) + 9) % 10; const el = layer.querySelector(`[data-i="${i}"]`); if (el) this.setFocus(el); return true; }
     return true;   // menus swallow other keys
   }
   autoFocusIfLost() {
@@ -167,7 +175,7 @@ export class UI {
     const cards = MODES.map((m) => {
       const s = loadGame(m.id);
       const beaten = s ? s.bosses.filter(Boolean).length : 0;
-      const info = s ? `<div class="save-info">${img(portraitIcon(CHARACTERS[s.character] || CHARACTERS[0]), 'mini')}${s.players === 2 ? img(portraitIcon(CHARACTERS[s.character2] || CHARACTERS[3]), 'mini') : ''} Level ${s.level} - ${(s.moves || []).flat().filter(Boolean).length} of 81 moves won</div>` : '<div class="save-info empty">New adventure</div>';
+      const info = s ? `<div class="save-info">${img(portraitIcon(CHARACTERS[s.character] || CHARACTERS[0]), 'mini')}${s.players === 2 ? img(portraitIcon(CHARACTERS[s.character2] || CHARACTERS[3]), 'mini') : ''} Level ${s.level} - ${(s.moves || []).flat().filter(Boolean).length} of 81 moves won${m.id !== 'creative' ? ` <b class="diff-chip diff-${s.difficulty || DEFAULT_DIFFICULTY}">${diffName(s.difficulty)}</b>` : ''}</div>` : '<div class="save-info empty">New adventure</div>';
       const btns = s ? `<button class="btn big primary" data-cont="${m.id}">Keep playing</button><button class="btn small" data-new="${m.id}">Start over</button>` : `<button class="btn big primary" data-new="${m.id}">Play</button>`;
       return `<div class="card mode-card mode-${m.id}"><div class="mode-icon">${this.modeIcon(m.id)}</div><h2>${m.name}</h2><p>${m.desc}</p>${info}<div class="card-buttons">${btns}</div></div>`;
     }).join('');
@@ -178,7 +186,8 @@ export class UI {
       b.onclick = () => {
         this.game.audio.unlock();
         const id = b.dataset.new, name = MODES.find((m) => m.id === id).name;
-        const go = () => this.askPlayers(1, (np) => this.game.newGame(id, np));
+        // Quest / Hero: how many players, then how hard. Creative is always easy.
+        const go = () => this.askPlayers(1, (np) => (id === 'creative' ? this.game.newGame(id, np, 'easy') : this.askDifficulty(DEFAULT_DIFFICULTY, (d) => this.game.newGame(id, np, d))));
         if (loadGame(id)) this.confirm(`Start ${name} again from the beginning? Your old ${name} game will be gone.`, go);
         else go();
       };
@@ -196,6 +205,19 @@ export class UI {
       </div>
       <div class="menu-buttons"><button class="btn small" data-a="back">Back</button></div></div></div>`));
     n.querySelectorAll('[data-n]').forEach((b) => { b.onclick = () => { n.remove(); cb(+b.dataset.n); }; });
+    n.querySelector('[data-a=back]').onclick = () => { n.remove(); this.autoFocus(); };
+    this.clearFocus();
+    this.autoFocus();
+  }
+  // "How hard?" - Easy / Medium / Hard (after picking Quest or Hero and 1 / 2 players)
+  askDifficulty(def, cb) {
+    const cards = DIFFICULTIES.map((d) => `<button class="btn big diff-card diff-${d.id} ${d.id === def ? 'primary kfirst' : ''}" data-d="${d.id}"><span class="diff-face">${DIFF_FACE[d.id] || ''}</span><span class="diff-name">${d.name}</span><small>${d.desc}</small></button>`).join('');
+    const n = this.mount('players', h(`<div class="overlay ov-players ov-diff"><div class="ov-box panel">
+      <h1>How hard?</h1>
+      <div class="players-row diff-row">${cards}</div>
+      <div class="tip">You can change this any time in the pause menu.</div>
+      <div class="menu-buttons"><button class="btn small" data-a="back">Back</button></div></div></div>`));
+    n.querySelectorAll('[data-d]').forEach((b) => { b.onclick = () => { n.remove(); cb(b.dataset.d); }; });
     n.querySelector('[data-a=back]').onclick = () => { n.remove(); this.autoFocus(); };
     this.clearFocus();
     this.autoFocus();
@@ -247,14 +269,30 @@ export class UI {
   }
 
   render_pause() {
+    const g = this.game, D = g.diff;
+    const canDiff = g.state && g.mode && g.mode.id !== 'creative';
     const n = this.wrap('pause', `<h1>Paused</h1>
       <div class="menu-buttons">
         <button class="btn big primary" data-a="resume">Play</button>
         <button class="btn" data-a="stuff">My stuff</button>
         <button class="btn" data-a="help">Keys</button>
+        ${canDiff ? `<button class="btn diff-btn diff-${D.id}" data-a="diff">Difficulty: ${D.name} &#9656;</button>` : ''}
         <button class="btn" data-a="settings">Settings</button>
         <button class="btn" data-a="quit">Save and go to menu</button>
       </div>`);
+    const db = n.querySelector('[data-a=diff]');
+    if (db) {
+      db.onclick = () => {
+        const i = DIFFICULTIES.findIndex((d) => d.id === g.diff.id);
+        const nx = DIFFICULTIES[(i + 1) % DIFFICULTIES.length];
+        g.setDifficulty(nx.id);
+        g.hud.toast(`Difficulty: ${nx.name}. ${nx.desc}`, 'info', 3);
+        this.render_pause();
+        const again = this.els.pause.querySelector('[data-a=diff]');
+        this.clearFocus();
+        if (again) this.setFocus(again);
+      };
+    }
     n.querySelector('[data-a=resume]').onclick = () => this.game.resume();
     n.querySelector('[data-a=stuff]').onclick = () => this.open('inventory');
     n.querySelector('[data-a=help]').onclick = () => { this.game.resume(); this.game.hud.toggleHelp(true); };
@@ -307,7 +345,7 @@ export class UI {
     const lootCount = Object.values(s.loot).reduce((a, v) => a + v.count, 0);
     const row = (key, icon, label, price, extra = '') => `<button class="btn shop-btn" data-buy="${key}" ${price !== null && s.coins < price ? 'disabled' : ''}>${img(icon, 'ico big')}<span class="shop-label">${label}${extra ? `<small>${extra}</small>` : ''}</span>${price !== null ? `<span class="shop-price">${coin} ${fmt(price)}</span>` : ''}</button>`;
     const rows = [
-      nextSw ? row('sword', swordIcon(nextSw), `Upgrade sword: ${nextSw.name}`, nextSw.price, `Now: ${SWORDS[s.sword].name}`) : `<div class="shop-done">${img(swordIcon(SWORDS[s.sword]), 'ico big')} You have the best sword!</div>`,
+      nextSw ? row('sword', swordIcon(nextSw), `Upgrade sword: ${nextSw.name}`, nextSw.price, `Now: ${SWORDS[s.sword].name}${g.players.some((q) => q.fists) ? " - it makes Kai's fists stronger too!" : ''}`) : `<div class="shop-done">${img(swordIcon(SWORDS[s.sword]), 'ico big')} You have the best sword!</div>`,
       nextAr ? row('armor', armorIcon(nextAr), `Upgrade armour: ${nextAr.name}`, nextAr.price, `Now: ${ARMORS[s.armor].name}`) : `<div class="shop-done">${img(armorIcon(ARMORS[s.armor]), 'ico big')} You have the best armour!</div>`,
       row('hp', potionIcon(POTIONS[0]), 'Buy a health potion', POTIONS[0].price, `You have ${s.potions.hp + s.potions.hp_big}. You drink them by yourself when you get hurt.`),
       row('mana', potionIcon(POTIONS[2]), 'Buy a mana potion', POTIONS[2].price, `You have ${s.potions.mana}`),
@@ -350,7 +388,7 @@ export class UI {
       <div class="inv-grid">
         <div class="inv-col">
           <div class="char-head">${img(portraitIcon(c), 'big-portrait')}<div><h2>${c.name}</h2><div class="char-title">${c.title} - Level ${s.level}</div></div></div>
-          <div class="gear-row">${img(swordIcon(p.sword), 'ico')}<span>${p.sword.name}</span></div>
+          <div class="gear-row">${img(swordIcon(p.sword), 'ico')}<span>${p.weaponName}</span></div>
           <div class="gear-row">${img(armorIcon(p.armor), 'ico')}<span>${p.armor.name}</span></div>
           <div class="gear-row">${img(coinIcon(), 'ico')}<span>${fmt(s.coins)} coins</span></div>
           <div class="gear-row">${img(potionIcon(POTIONS[0]), 'ico')}<span>${s.potions.hp + s.potions.hp_big} health potions, ${s.potions.mana} mana potions</span></div>
@@ -370,7 +408,7 @@ export class UI {
   render_map() {
     const g = this.game;
     const n = this.wrap('map', `<div class="inv-head"><h1>${g.worldName}</h1></div><canvas class="bigmap" width="640" height="640"></canvas>
-      <div class="legend"><span><i class="lg-you"></i>You</span><span><i class="lg-portal"></i>Portal</span><span><i class="lg-temple"></i>Temple</span><span><i class="lg-shop"></i>Shop</span><span><i class="lg-bed"></i>Bed</span><span><i class="lg-boss"></i>Boss</span><span><i class="lg-enemy"></i>Monster</span><span><i class="lg-night"></i>Night creature</span></div>
+      <div class="legend"><span><i class="lg-you"></i>You</span><span><i class="lg-portal"></i>Portal</span><span><i class="lg-temple"></i>Temple</span><span><i class="lg-shop"></i>Shop</span><span><i class="lg-bed"></i>Bed</span><span><i class="lg-boss"></i>Boss</span><span><i class="lg-enemy"></i>Monster</span><span><i class="lg-night"></i>Night creature</span>${g.state.mapped && g.state.mapped[String(g.worldId)] ? '<span><i class="lg-camp"></i>Bandit camp</span>' : ''}</div>
       <div class="menu-buttons"><button class="btn primary" data-close>Close (M)</button></div>`, 'map');
     const cv = n.querySelector('.bigmap'), ctx = cv.getContext('2d');
     const hud = g.hud;
@@ -396,10 +434,61 @@ export class UI {
     const g = this.game, p = this.owner || g.player;
     const cur = p.charIndex;
     const side = g.players.length > 1 && p.index === 1 ? 'side right' : 'side';
+    const locked = (c) => c.unlock === 'dojo' && !(g.state && (g.state.dojo || g.mode.id === 'creative'));
+    const powerLine = (c) => (c.power == null
+      ? `<em class="hero-power" style="color:#ff8a7a">${img(ICON_FIST, 'pico')}Fists and kicks! Power: any you have won</em>`
+      : `<em class="hero-power" style="color:${POWERS[c.power].color}">${img(powerIcon(POWERS[c.power]), 'pico')}Power: ${POWERS[c.power].name} - stronger when ${c.name} uses it</em>`);
+    const tile = (c, i) => (locked(c)
+      ? `<div class="char-tile locked" data-nav data-i="${i}" data-locked="1">${img(portraitIcon(c))}<div><span>${c.name} ${img(lockIcon(), 'pico')}</span><small>${c.title}</small><em class="hero-power">Visit the Dojo at Home Base</em></div></div>`
+      : `<div class="char-tile ${i === cur ? 'selected' : ''}" data-nav data-i="${i}">${img(portraitIcon(c))}<div><span>${c.name}</span><small>${SHORT_BIO[c.id] || c.title}</small>${powerLine(c)}</div></div>`);
     const n = this.wrap('switcher', `<h1>Pick a hero</h1>
-      <div class="switch-grid">${CHARACTERS.map((c, i) => `<div class="char-tile ${i === cur ? 'selected' : ''}" data-nav data-i="${i}">${img(portraitIcon(c))}<div><span>${c.name}</span><small>${SHORT_BIO[c.id] || c.title}</small><em class="hero-power" style="color:${POWERS[c.power].color}">${img(powerIcon(POWERS[c.power]), 'pico')}Power: ${POWERS[c.power].name} - stronger when ${c.name} uses it</em></div></div>`).join('')}</div>
+      <div class="switch-grid n${CHARACTERS.length}">${CHARACTERS.map(tile).join('')}</div>
       <div class="tip">Every hero has their own power. Move to look, press to pick.</div>`, side);
-    n.querySelectorAll('.char-tile').forEach((t) => { t.onclick = () => { const i = +t.dataset.i; g.resume(); g.switchCharacter(p, i); }; });
+    n.querySelectorAll('.char-tile').forEach((t) => {
+      t.onclick = () => {
+        const i = +t.dataset.i;
+        if (t.dataset.locked) { g.audio.play('deny'); g.hud.toastFor(p, `${CHARACTERS[i].name} lives in the Dojo at Home Base. Talk to the Dojo Master to play as ${CHARACTERS[i].name}!`, 'warn', 3.5); return; }
+        g.resume(); g.switchCharacter(p, i);
+      };
+    });
+  }
+
+  // ---------------------------------------------------------------- talking to your buddy
+  render_buddy() {
+    const g = this.game, p = this.owner || g.player, b = g.buddies.of(p);
+    if (!b) { setTimeout(() => g.resume(), 0); return; }
+    const n = this.wrap('buddy', `<h1>${b.name}</h1>
+      <p class="dim">${b.waiting ? '"I am waiting right here for you!"' : '"Where are we going next?"'}</p>
+      <div class="menu-buttons">
+        ${b.waiting ? '<button class="btn big primary" data-a="come">Come with me!</button>' : '<button class="btn big primary" data-a="ok">Let\'s keep going!</button><button class="btn" data-a="wait">Wait here</button>'}
+        <button class="btn" data-a="home">Go home</button>
+      </div>`);
+    const bind = (a, fn) => { const x = n.querySelector(`[data-a=${a}]`); if (x) x.onclick = () => { fn(); g.resume(); }; };
+    bind('ok', () => g.buddies.say(b, 'Right behind you!', 2));
+    bind('come', () => { b.waiting = false; g.buddies.say(b, "Yay! Let's go!", 2); });
+    bind('wait', () => { b.waiting = true; g.buddies.say(b, 'Okay, I will wait right here!', 2.5); });
+    bind('home', () => g.buddies.dismiss(b));
+  }
+
+  // ---------------------------------------------------------------- Portal Keeper: zap to a place in this world
+  render_zap(data = {}) {
+    const g = this.game, list = g.npcs.zapTargets();
+    this.zapList = list;
+    const n = this.wrap('zap', `<h1>Where to?</h1>
+      <div class="menu-buttons zap-list">${list.map((t, i) => `<button class="btn ${i === 0 ? 'primary' : ''}" data-z="${i}">${t.label}${t.sub ? ` <small>${t.sub}</small>` : ''}</button>`).join('')}
+        <button class="btn small" data-close>Stay here</button></div>`);
+    n.querySelectorAll('[data-z]').forEach((b) => { b.onclick = () => { const t = this.zapList[+b.dataset.z]; g.resume(); if (t) g.npcs.zap(t); }; });
+    void data;
+  }
+  // ---------------------------------------------------------------- Animal Tamer: pick a pet
+  render_pet() {
+    const g = this.game, p = this.owner || g.player, cur = g.pets.of(p);
+    const pets = [['dog', 'Dog', 'Loyal and fast - loves fetching coins!'], ['cat', 'Cat', 'Soft and clever.'], ['rabbit', 'Rabbit', 'Hop hop hop!']];
+    const n = this.wrap('pet', `<h1>Pick a pet!</h1>
+      <p class="dim">${cur ? `${cur.name} the ${cur.kind} will go back to the Tamer if you pick a new pet.` : 'Your pet follows you everywhere - even through portals - and picks up coins for you.'}</p>
+      <div class="players-row pet-row">${pets.map(([k, nm, d], i) => `<button class="btn big pl-card pet-card ${i === 0 ? 'primary kfirst' : ''}" data-pet="${k}"><span class="pet-ico">${ICON.tamer}</span><span>${nm}</span><small>${d}</small></button>`).join('')}</div>
+      <div class="menu-buttons"><button class="btn small" data-close>Not now</button></div>`);
+    n.querySelectorAll('[data-pet]').forEach((b) => { b.onclick = () => { g.resume(); g.pets.give(p, b.dataset.pet); }; });
   }
 
   // ---------------------------------------------------------------- death / victory

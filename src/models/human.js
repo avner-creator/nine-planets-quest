@@ -625,6 +625,25 @@ function addExtras(B, D, L, q) {
     B.add(g, { cell: 'fur', color: L.pelt, w: B.ladder('y', [['spine', 1.2 * s], ['chest', 1.33 * s]]) });
     B.both((sd, S) => B.add(blob(0.075 * s, 0.05 * s, 0.075 * s, 1, 1, 12, 8), { pos: [sd * D.shX, D.shY + 0.025 * s, D.shZ], cell: 'fur', color: L.pelt, bone: 'clav' + S }));
   }
+  if (L.headband) { // martial-arts headband with two tails at the back
+    const hb = col(L.headband);
+    B.add(torus(0.088 * s, 0.01 * s, 18, 4), { pos: [hc.x, hc.y + 0.045 * s, hc.z - 0.004 * s], rot: [Math.PI / 2 - 0.15, 0, 0], scl: [1.0, 1.15, 1], cell: 'cloth', color: hb, bone: 'head' });
+    for (const sd of [-1, 1]) B.add(tube([V3(hc.x, hc.y + 0.03 * s, hc.z - 0.11 * s), V3(hc.x + sd * 0.035 * s, hc.y - 0.02 * s, hc.z - 0.16 * s), V3(hc.x + sd * 0.05 * s, hc.y - 0.1 * s, hc.z - 0.16 * s)], 0.009 * s, 4, { flatten: 0.3 }), { cell: 'cloth', color: hb, bone: 'head' });
+  }
+  if (L.gi) { // wrap-over jacket lapels + belt knot with two hanging tails
+    const lap = shade(L.top, 0.9), tw = torsoW(B, D);
+    const lapel = (sd, inflate) => {
+      const pts = [];
+      for (let i = 0; i <= 6; i++) { const t = i / 6, yN = lerp(1.53, 1.02, t); const p = torsoPoint(D, L, sd * lerp(0.95, -0.35, Math.pow(t, 0.8)), yN, inflate * s, new THREE.Vector3()); pts.push(p); }
+      return tube(pts, 0.016 * s, 4, { flatten: 0.35 });
+    };
+    B.add(lapel(-1, 0.012), { cell: 'cloth', color: lap, w: tw });
+    B.add(lapel(1, 0.018), { cell: 'cloth', color: lap, w: tw });
+    const bc = col(L.beltColor ?? '#151515'), fz = torsoFrontZ(D, L, L.beltY ?? 1.0, 0.02 * s);
+    const kp = V3(-0.05 * D.x, (L.beltY ?? 1.0) * s, fz + 0.005 * s);
+    B.add(blob(0.022 * s, 0.02 * s, 0.014 * s, 1, 1, 8, 6), { pos: kp.toArray(), cell: 'cloth', color: bc, w: tw });
+    for (const k of [-1, 1]) B.add(tube([kp.clone(), kp.clone().add(V3(k * 0.025 * s, -0.08 * s, 0.006 * s)), kp.clone().add(V3(k * 0.04 * s, -0.17 * s, 0.0))], 0.012 * s, 4, { flatten: 0.3 }), { cell: 'cloth', color: bc, w: skirtW(B, D, 0.98) });
+  }
   if (L.satchel) { // strap across the chest + a bag on the hip
     const sc = col(L.satchel);
     B.add(tube([V3(0.13 * D.x, 1.45 * s, 0.03 * s), V3(0.02 * D.x, 1.3 * s, torsoFrontZ(D, L, 1.3, 0.03 * s)), V3(-0.12 * D.x, 1.1 * s, torsoFrontZ(D, L, 1.1, 0.03 * s)), V3(-0.17 * D.x, 0.98 * s, 0.0)], 0.012 * s, 5, { flatten: 0.3 }), { cell: 'leather', color: shade(sc, 0.8), w: torsoW(B, D) });
@@ -787,3 +806,6 @@ export function swordGeometry(def, q = 1) {
   });
 }
 export const SWORD_LENGTH = (def) => (def?.id === 'wood' ? 0.72 : def?.id === 'stone' ? 0.74 : def?.id === 'diamond' ? 0.92 : 0.84) + 0.085;
+
+// helpers for props / hats built outside this file (characters.js)
+export { headCap, torsoFrontZ, torsoPoint, torsoW, skirtW, hcV, HEAD_R };

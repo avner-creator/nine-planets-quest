@@ -578,7 +578,7 @@ export class FX {
       if (p.onUpdate) p.onUpdate(p, dt);
       let hit = false;
       const gh = world ? world.heightAt(p.pos.x, p.pos.z) : -999;
-      if (p.pos.y < gh + 0.1) hit = 'ground';
+      if (p.pos.y < gh + 0.1 && !(p.groundGrace > p.t)) hit = 'ground';   // groundGrace: ignore hills right after launch
       else if (p.hit && p.hit(p)) hit = 'target';
       if (hit || p.t > (p.life || 3) || p.dead) {
         if (hit && p.onHit) p.onHit(p, hit);

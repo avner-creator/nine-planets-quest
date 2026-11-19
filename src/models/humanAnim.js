@@ -348,9 +348,9 @@ export class HumanRig {
   attack(combo = 0) {
     const make = combo === 1 ? this.A.slash1 : combo === 2 ? this.A.slam : this.A.slash0;
     const a = make();
-    const sp = this.attackSpeed;
-    this._play(a, sp);
-    return { duration: a.dur / sp, hitTime: a.hit / sp };
+    const sp = this.attackSpeed, out = { duration: a.dur / sp, hitTime: a.hit / sp };
+    this._play(a, sp); // (_play rescales the action's own keys)
+    return out;
   }
   cast(powerId) {
     const make = this.C[powerId] || this.C.fire;
@@ -443,3 +443,55 @@ export class HumanRig {
   }
 }
 const _wp = new THREE.Vector3();
+
+// ------------------------------------------------------------------ martial arts (hero fight style 'fists', sensei)
+export function fistKit(J, D) {
+  const K = poseKit(J, D), s = D.s;
+  const base = () => {};
+  const guard = (P) => { K.arm(P, 'L', -0.95, -0.3, 0.25, -1.95, 0.5, 0.1); K.arm(P, 'R', -0.7, -0.4, 0.25, -2.25, 0.4, 0.1); };
+  const ready = (P, k = 1, bounce = 0) => {
+    P.off(J.hips, 0, (-0.07 * k + bounce) * s, 0);
+    P.e(J.hips, 0, -0.25 * k, 0);
+    K.leg(P, 'L', -0.38 * k, 0.1, 0.45 * k, -0.07 * k, 0, 0.25 * k);
+    K.leg(P, 'R', 0.3 * k, 0.12, 0.4 * k, -0.7 * k, 0, 0.25 * k);
+    K.torso(P, 0.06, -0.15 * k); K.look(P, 0, 0.35 * k);
+  };
+  const hipsYaw = (P, y, lift = 0) => { P.e(J.hips, 0, y, 0); P.off(J.hips, 0, lift * s, 0); };
+  const kickLeg = (P, k) => { // right leg: chamber (k=0) -> extended sideways (k=1)
+    K.leg(P, 'R', lerp(-1.0, -0.25, k), lerp(0.55, 1.45, k), lerp(1.7, 0.05, k), 0.5);
+    K.leg(P, 'L', -0.08, 0.1, 0.25, -0.15);
+    P.e(J.spine, 0, 0, -0.35 * k); P.e(J.chest, 0, 0, -0.2 * k);
+    K.arm(P, 'L', -0.6, -0.2, 0.6, -1.6, 0.5, 0.1); K.arm(P, 'R', -0.2, 0, 0.9, -0.9, 0.4, 0.1);
+  };
+  return {
+    guard, ready,
+    jab: () => ({ dur: 0.38, hit: 0.13, fadeIn: 0.04, fadeOut: 0.12, tip: 'L', keys: [[0, base],
+      [0.06, (P) => { ready(P); guard(P); }, 'o'],
+      [0.13, (P) => { ready(P); K.torso(P, 0.06, -0.45); K.arm(P, 'L', -1.52, 0.1, 0.1, -0.04, 0.6, 0.0); K.arm(P, 'R', -0.7, -0.4, 0.25, -2.25, 0.4, 0.1); P.addOff(J.hips, 0, 0, 0.05 * s); }, 'i'],
+      [0.22, (P) => { ready(P); guard(P); }],
+      [0.38, base]] }),
+    cross: () => ({ dur: 0.46, hit: 0.18, fadeIn: 0.04, fadeOut: 0.14, tip: 'R', keys: [[0, base],
+      [0.08, (P) => { ready(P); guard(P); K.torso(P, 0.05, -0.45); }, 'o'],
+      [0.18, (P) => { ready(P); P.e(J.hips, 0, 0.3, 0); K.torso(P, 0.12, 0.4); K.arm(P, 'R', -1.52, -0.2, 0.1, -0.04, 0.6, 0.0); K.arm(P, 'L', -0.95, -0.3, 0.25, -2.0, 0.5, 0.1); K.leg(P, 'R', 0.25, 0.12, 0.3, -0.45, 0, -0.4); P.addOff(J.hips, 0, 0, 0.07 * s); }, 'i'],
+      [0.3, (P) => { ready(P); guard(P); }],
+      [0.46, base]] }),
+    // spinning roundhouse: the hips turn ~1.25 times, the right leg lands the kick facing forward again
+    roundhouse: () => ({ dur: 1.0, hit: 0.62, fadeIn: 0.06, fadeOut: 0.2, tip: 'F', keys: [[0, base],
+      [0.1, (P) => { ready(P); guard(P); hipsYaw(P, -0.5, -0.08); }, 'o'],
+      [0.2, (P) => { hipsYaw(P, 0.9, -0.02); kickLeg(P, 0); }, 'l'],
+      [0.3, (P) => { hipsYaw(P, 2.4, 0.0); kickLeg(P, 0.15); }, 'l'],
+      [0.38, (P) => { hipsYaw(P, 3.9, 0.02); kickLeg(P, 0.35); }, 'l'],
+      [0.46, (P) => { hipsYaw(P, 5.4, 0.03); kickLeg(P, 0.6); }, 'l'],
+      [0.55, (P) => { hipsYaw(P, 7.0, 0.03); kickLeg(P, 0.9); }, 'l'],
+      [0.62, (P) => { hipsYaw(P, 7.85, 0.03); kickLeg(P, 1); }, 'o'],
+      [0.78, (P) => { hipsYaw(P, 7.85, 0.0); kickLeg(P, 0.2); }],
+      [1.0, base]] }),
+    flyingKick: () => ({ dur: 0.95, hit: 0.5, fadeIn: 0.06, fadeOut: 0.2, tip: 'F', keys: [[0, base],
+      [0.15, (P) => { K.crouch(P, 0.5, 0.15); K.arm(P, 'L', 0.5, 0, 0.3, -0.6, 0.4, 0); K.arm(P, 'R', 0.5, 0, 0.3, -0.6, 0.4, 0); K.torso(P, 0.25, 0); }, 'o'],
+      [0.35, (P) => { P.off(J.hips, 0, 0.35 * s, 0); K.leg(P, 'R', -1.2, 0.05, 1.6, 0.3); K.leg(P, 'L', -0.9, 0.08, 1.8, 0.3); K.arm(P, 'L', -1.2, 0.3, 0.5, -1.2, 0.4, 0); K.arm(P, 'R', -0.5, 0.3, 0.6, -1.4, 0.4, 0); K.torso(P, -0.05, 0); }, 'o'],
+      [0.5, (P) => { P.off(J.hips, 0, 0.5 * s, 0.25 * s); P.e(J.hips, -0.25, -0.3, 0); K.leg(P, 'R', -1.45, 0.05, 0.04, 0.6); K.leg(P, 'L', -0.7, 0.1, 1.9, 0.4); K.arm(P, 'L', -1.4, -0.4, 0.4, -0.3, 0.4, 0); K.arm(P, 'R', 0.6, 0.2, 0.5, -0.4, 0.4, 0); K.torso(P, -0.25, -0.25); K.look(P, 0.15, 0.25); }, 'i'],
+      [0.68, (P) => { P.off(J.hips, 0, 0.25 * s, 0.2 * s); K.leg(P, 'R', -0.9, 0.05, 1.0, 0.3); K.leg(P, 'L', -0.6, 0.1, 1.2, 0.3); guard(P); }],
+      [0.82, (P) => { K.crouch(P, 0.35); guard(P); }],
+      [0.95, base]] }),
+  };
+}

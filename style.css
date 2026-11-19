@@ -465,3 +465,70 @@ input[type=range] { width: 100%; accent-color: var(--gold); }
 .slot.locked .lock { top: 30%; width: 18px; height: 18px; }
 .slot .tmpl { white-space: normal; line-height: 1.05; font-size: 9px; padding: 0 2px; bottom: 2px; }
 .hud.two .slot .tmpl { font-size: 8px; }
+
+/* ================================================================ friendly people: name tags + speech bubbles */
+.npc-layer { z-index: 2; }
+.npc-tag { position: absolute; left: 0; top: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; will-change: transform; pointer-events: none; }
+.npc-tag .tag { display: flex; align-items: center; gap: 5px; padding: 2px 9px 2px 4px; border-radius: 12px; background: rgba(10,14,24,0.72); border: 1px solid rgba(255,255,255,0.3); font-size: 13px; font-weight: 800; color: #fff; text-shadow: 0 1px 2px #000; white-space: nowrap; }
+.npc-tag .bubble { max-width: 220px; padding: 6px 12px; border-radius: 14px; background: #fffdf6; color: #2a2a3a; font-size: 14px; font-weight: 700; line-height: 1.25; text-align: center; box-shadow: 0 3px 10px rgba(0,0,0,0.4); position: relative; }
+.npc-tag .bubble::after { content: ''; position: absolute; left: 50%; bottom: -7px; margin-left: -7px; border: 7px solid transparent; border-top-color: #fffdf6; border-bottom: 0; }
+.npc-tag .nico { display: inline-block; width: 16px; height: 16px; border-radius: 50%; background: #9cc4ff; }
+.npc-tag.k-healer .nico { background: #fff; clip-path: polygon(35% 0, 65% 0, 65% 35%, 100% 35%, 100% 65%, 65% 65%, 65% 100%, 35% 100%, 35% 65%, 0 65%, 0 35%, 35% 35%); background-color: #6bff9a; border-radius: 0; }
+.npc-tag.k-healer .tag { border-color: #6bff9a; }
+.npc-tag.k-guide .nico { background: #ffd34a; clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%); border-radius: 0; }
+.npc-tag.k-guide .tag { border-color: #ffd34a; }
+.npc-tag.k-fighter .nico, .npc-tag.k-buddy .nico { background: #9fe8ff; clip-path: polygon(45% 0, 55% 0, 58% 62%, 80% 62%, 80% 72%, 58% 72%, 58% 100%, 42% 100%, 42% 72%, 20% 72%, 20% 62%, 42% 62%); border-radius: 0; }
+.npc-tag.k-fighter .tag { border-color: #9fe8ff; }
+.npc-tag.k-buddy .tag { border-color: #7af0ff; background: rgba(20,60,80,0.8); }
+.npc-tag.k-buddy.theirs .tag { border-color: #5ad1ff; }
+.obj-marker.pulse .obj-diamond { animation: markerpulse 0.5s ease-in-out 4; }
+@keyframes markerpulse { 50% { transform: rotate(45deg) scale(1.8); box-shadow: 0 0 30px #ffd34a; } }
+
+/* ================================================================ Easy / Medium / Hard */
+.diff-row { flex-wrap: wrap; }
+.diff-card { flex-direction: column; width: 220px; padding: 18px 14px; gap: 6px; border-width: 3px; }
+.diff-card .diff-face svg { width: 64px; height: 64px; display: block; }
+.diff-card .diff-name { font-size: 30px; font-weight: 900; }
+.diff-card small { font-size: 13px; opacity: 0.85; color: inherit; line-height: 1.25; }
+.diff-card.diff-easy { border-color: #5fd36a; background: linear-gradient(180deg, rgba(60,170,80,0.55), rgba(30,90,40,0.55)); }
+.diff-card.diff-medium { border-color: #ffd34a; background: linear-gradient(180deg, rgba(200,160,30,0.55), rgba(110,80,10,0.55)); }
+.diff-card.diff-hard { border-color: #ff5a4a; background: linear-gradient(180deg, rgba(200,60,50,0.55), rgba(110,25,20,0.55)); }
+.diff-card.kfocus, .diff-card:hover { transform: scale(1.06); box-shadow: 0 0 0 3px #fff, 0 0 28px rgba(255,255,255,0.35); }
+.diff-chip { display: inline-block; margin-left: 6px; padding: 1px 8px; border-radius: 10px; font-size: 12px; color: #fff; text-shadow: 0 1px 1px #000; }
+.diff-chip.diff-easy, .diff-btn.diff-easy { background: rgba(60,170,80,0.85); }
+.diff-chip.diff-medium, .diff-btn.diff-medium { background: rgba(200,150,30,0.85); }
+.diff-chip.diff-hard, .diff-btn.diff-hard { background: rgba(200,60,50,0.85); }
+@media (max-width: 760px) { .diff-card { width: 160px; padding: 12px 8px; } .diff-card .diff-name { font-size: 22px; } }
+
+/* ================================================================ more friendly people: icons, boosts, bag, side quest */
+.npc-tag .nico { width: 18px; height: 18px; background: none !important; clip-path: none !important; border-radius: 0; display: inline-flex; }
+.npc-tag .nico svg, .buff svg, .pet-ico svg { width: 100%; height: 100%; display: block; }
+.npc-tag.k-healer .tag { border-color: #6bff9a; } .npc-tag.k-guide .tag, .npc-tag.k-questgiver .tag { border-color: #ffd34a; }
+.npc-tag.k-knight .tag, .npc-tag.k-archer .tag, .npc-tag.k-mage .tag { border-color: #9fe8ff; }
+.npc-tag.k-pet .tag { border-color: #ff8ac0; background: rgba(80,20,50,0.75); }
+.npc-tag.k-sensei .tag { border-color: #ff5a4a; background: rgba(60,10,10,0.8); }
+.v-status .buff { display: inline-flex; align-items: center; gap: 4px; }
+.v-status .buff svg { width: 16px; height: 16px; }
+.bag { display: flex; gap: 10px; }
+.bag .pot { font-size: 18px; }
+.bag .pot .ico { width: 26px; height: 26px; }
+.obj-side { font-size: 14px; font-weight: 800; color: #ffe08a; margin-top: 3px; }
+.zap-list .btn small { opacity: 0.75; margin-left: 6px; font-size: 12px; }
+.pet-card .pet-ico { width: 54px; height: 54px; display: block; }
+.lg-camp { background: #ff9a3a; }
+
+/* ================================================================ 10 heroes (Kai the Dojo Master) */
+.switch-grid.n10 { grid-template-columns: repeat(2, 1fr); gap: 8px; }
+.switch-grid.n10 .char-tile, .switch-grid.n10 .char-tile:hover { flex-direction: row; text-align: left; padding: 6px 10px; gap: 10px; }
+.switch-grid.n10 .char-tile img:first-child { width: 54px; height: 54px; flex: none; }
+.switch-grid.n10 .char-tile span { font-size: 17px; }
+.switch-grid.n10 .char-tile small { font-size: 12px; }
+.switch-grid.n10 .hero-power { font-size: 11px; }
+.char-tile.locked { opacity: 0.6; filter: grayscale(0.7); }
+.char-tile.locked .hero-power { color: #ffd34a; }
+.char-tile .pico { width: 14px; height: 14px; vertical-align: -2px; margin-right: 3px; }
+@media (max-width: 1150px) {
+  .switch-grid.n10 .char-tile { flex-direction: row; text-align: left; }
+  .switch-grid.n10 .char-tile img:first-child { width: 44px; height: 44px; }
+  .switch-grid.n10 .hero-power { font-size: 10px; }
+}

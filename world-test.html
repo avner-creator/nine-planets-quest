@@ -112,6 +112,8 @@ async function load() {
   if (L.bossArena) jb('boss arena', L.bossArena.pos, yawToward(L.bossArena.pos), 50, 18);
   if (L.homePortal) jb('home portal', L.homePortal.pos, L.homePortal.yaw + Math.PI, 8, 2.5);
   if (L.portals) { jb('plaza', L.portals[4].pos, L.portals[4].yaw + Math.PI, 30, 8); L.portals.forEach((p) => jb('P' + p.index, p.pos, p.yaw + Math.PI, 8, 2)); }
+  if (L.dojo) { jb('dojo', L.dojo.door, L.dojo.masterYaw + Math.PI, 22, 7); jb('dojo inside', L.dojo.mat.pos, L.dojo.masterYaw + Math.PI, 9, 2.2); }
+  if (L.temples) L.temples.forEach((t) => jb(['shrine', 'temple', 'great temple'][t.tier], t.courtyard.pos, Math.atan2(t.pos.x - t.courtyard.pos.x, t.pos.z - t.courtyard.pos.z), 30, 10));
   world.banditCamps.forEach((c, i) => jb('camp ' + (i + 1), c.pos, yawToward(c.pos), 22, 8));
   jb('overview', new THREE.Vector3(0, world.heightAt(0, 0), 0), yaw, 0, 140);
   const S = $('states'); S.innerHTML = '';

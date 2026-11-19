@@ -198,3 +198,47 @@ export function blockIcon(def) {
 
 // small helper: <img> HTML string
 export const img = (src, cls = '') => `<img class="${cls}" src="${src}" alt="" draggable="false">`;
+
+// crops from the Farmer and food from the Cook (shown next to the potions)
+export function bagIcon(id) {
+  return make('bag' + id, 64, (g) => {
+    g.lineJoin = 'round'; g.lineCap = 'round';
+    g.strokeStyle = 'rgba(0,0,0,0.55)'; g.lineWidth = 2.5;
+    switch (id) {
+      case 'wheat':
+        g.strokeStyle = '#a8862a'; g.lineWidth = 3; g.beginPath(); g.moveTo(32, 60); g.lineTo(32, 18); g.moveTo(32, 50); g.lineTo(20, 26); g.moveTo(32, 50); g.lineTo(44, 26); g.stroke();
+        g.fillStyle = '#e3c46a'; g.strokeStyle = '#8a6a20'; g.lineWidth = 1.5;
+        [[32, 12, 0], [19, 22, -0.5], [45, 22, 0.5]].forEach(([x, y, r]) => { for (let k = 0; k < 3; k++) { g.beginPath(); g.ellipse(x + Math.sin(r) * k * 5, y + k * 6, 4, 6, r, 0, Math.PI * 2); g.fill(); g.stroke(); } });
+        break;
+      case 'carrot':
+        g.fillStyle = '#f08a24'; g.beginPath(); g.moveTo(22, 20); g.quadraticCurveTo(44, 16, 46, 24); g.lineTo(18, 58); g.closePath(); g.fill(); g.stroke();
+        g.strokeStyle = 'rgba(120,50,0,0.5)'; g.lineWidth = 2; g.beginPath(); g.moveTo(28, 32); g.lineTo(36, 30); g.moveTo(24, 42); g.lineTo(31, 40); g.stroke();
+        g.fillStyle = '#4fae3a'; g.strokeStyle = 'rgba(0,0,0,0.5)'; g.lineWidth = 1.5;
+        [[-0.6], [0], [0.6]].forEach(([r]) => { g.save(); g.translate(38, 18); g.rotate(r + 0.5); g.beginPath(); g.ellipse(0, -9, 4, 10, 0, 0, Math.PI * 2); g.fill(); g.stroke(); g.restore(); });
+        break;
+      case 'apple':
+        g.fillStyle = '#d8282f'; g.beginPath(); g.arc(24, 38, 15, 0, Math.PI * 2); g.arc(40, 38, 15, 0, Math.PI * 2); g.fill();
+        g.beginPath(); g.arc(32, 38, 21, 0, Math.PI * 2); g.stroke();
+        g.fillStyle = 'rgba(255,255,255,0.45)'; g.beginPath(); g.ellipse(23, 32, 4, 7, -0.4, 0, Math.PI * 2); g.fill();
+        g.strokeStyle = '#6a4020'; g.lineWidth = 3; g.beginPath(); g.moveTo(32, 20); g.lineTo(34, 8); g.stroke();
+        g.fillStyle = '#4fae3a'; g.beginPath(); g.ellipse(41, 12, 7, 3.5, -0.4, 0, Math.PI * 2); g.fill();
+        break;
+      case 'bread':
+        g.fillStyle = '#c98a43'; g.beginPath(); g.moveTo(8, 44); g.quadraticCurveTo(8, 18, 32, 18); g.quadraticCurveTo(56, 18, 56, 44); g.lineTo(56, 50); g.lineTo(8, 50); g.closePath(); g.fill(); g.stroke();
+        g.strokeStyle = '#f2d39a'; g.lineWidth = 3; [20, 32, 44].forEach((x) => { g.beginPath(); g.moveTo(x - 4, 26); g.lineTo(x + 4, 36); g.stroke(); });
+        break;
+      case 'soup':
+        g.fillStyle = '#e8eef4'; g.beginPath(); g.moveTo(6, 30); g.lineTo(58, 30); g.quadraticCurveTo(56, 56, 32, 56); g.quadraticCurveTo(8, 56, 6, 30); g.fill(); g.stroke();
+        g.fillStyle = '#f08a24'; g.beginPath(); g.ellipse(32, 31, 24, 5, 0, 0, Math.PI * 2); g.fill();
+        g.strokeStyle = 'rgba(255,255,255,0.8)'; g.lineWidth = 2; [22, 32, 42].forEach((x) => { g.beginPath(); g.moveTo(x, 24); g.quadraticCurveTo(x - 4, 18, x, 12); g.stroke(); });
+        break;
+      case 'pie':
+        g.fillStyle = '#e8b060'; g.beginPath(); g.moveTo(6, 42); g.quadraticCurveTo(32, 16, 58, 42); g.lineTo(54, 52); g.lineTo(10, 52); g.closePath(); g.fill(); g.stroke();
+        g.fillStyle = '#b5502e'; g.beginPath(); g.ellipse(32, 41, 20, 5, 0, 0, Math.PI * 2); g.fill();
+        g.strokeStyle = '#f6d090'; g.lineWidth = 3; g.beginPath(); g.moveTo(16, 36); g.lineTo(48, 36); g.moveTo(22, 30); g.lineTo(42, 30); g.stroke();
+        break;
+      default:
+        g.fillStyle = '#ccc'; g.beginPath(); g.arc(32, 32, 20, 0, Math.PI * 2); g.fill();
+    }
+  });
+}

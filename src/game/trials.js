@@ -98,7 +98,8 @@ export class Trials {
     const spot = () => g.enemies.findSpot(court.pos, 3, (court.radius || 20) * 0.75, 20) || court.pos.clone();
     if (c.k === 0) {
       const n = TRIALS[0].count[c.tier] * (g.players.length > 1 ? 1.5 : 1);
-      for (let j = 0; j < Math.round(n); j++) {
+      const total = Math.max(1, Math.round(n) + g.diff.waveExtra);   // Easy: one fewer, Hard: two more
+      for (let j = 0; j < total; j++) {
         const e = g.enemies.spawnTrial(pick(D.enemies), spot(), { hpMul: TRIALS[0].hpMul * (1 + c.tier * 0.25) });
         if (e) c.enemies.push(e);
       }

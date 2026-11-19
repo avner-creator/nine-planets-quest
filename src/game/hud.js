@@ -1,8 +1,9 @@
 // In-game HUD. Shared parts (goal line, coins/potions/keys, boss bar, toasts, banners, help) plus one VIEW per
 // player (health/mana/xp, move bar, prompt, minimap, goal marker, damage numbers, enemy health bars).
 import * as THREE from 'three';
-import { POWERS, POWER_ATTACKS, BLOCKS, xpForLevel, POTIONS, DIMENSIONS, CONTROLS } from '../data.js';
-import { powerIcon, blockIcon, potionIcon, coinIcon, lockIcon, img } from './icons.js';
+import { POWERS, POWER_ATTACKS, BLOCKS, xpForLevel, POTIONS, DIMENSIONS, CONTROLS, CROPS, RECIPES } from '../data.js';
+import { powerIcon, blockIcon, potionIcon, coinIcon, lockIcon, bagIcon, img } from './icons.js';
+import { ICON, BUFFS } from './npcs.js';
 import { clamp, fmt } from './util.js';
 import { keyName } from './controls.js';
 
@@ -16,7 +17,7 @@ class View {
     const root = el('div', `view view-p${player.index + 1}`);
     root.innerHTML = `
       <div class="hud-flash"></div><div class="hud-vignette"></div><div class="hud-dark"></div>
-      <div class="hud-layer dmg-layer"></div><div class="hud-layer bar-layer"></div>
+      <div class="hud-layer dmg-layer"></div><div class="hud-layer bar-layer"></div><div class="hud-layer npc-layer"></div>
       <div class="obj-marker hidden"><div class="obj-diamond"></div><div class="obj-dist"></div></div>
       <div class="crosshair hidden"><i></i></div>
       <div class="v-stats">
@@ -37,7 +38,7 @@ class View {
     this.root = root;
     const q = (s) => root.querySelector(s);
     this.$ = {
-      flash: q('.hud-flash'), vig: q('.hud-vignette'), dark: q('.hud-dark'), dmg: q('.dmg-layer'), bars: q('.bar-layer'),
+      flash: q('.hud-flash'), vig: q('.hud-vignette'), dark: q('.hud-dark'), dmg: q('.dmg-layer'), bars: q('.bar-layer'), npcs: q('.npc-layer'),
       marker: q('.obj-marker'), markerDist: q('.obj-dist'), crosshair: q('.crosshair'), who: q('.v-who'), status: q('.v-status'),
       hp: q('.bar.hp .fill'), hpGhost: q('.bar.hp .ghost'), hpText: q('.bar.hp span'), mp: q('.bar.mp .fill'), mpText: q('.bar.mp span'), xp: q('.bar.xp .fill'), level: q('.hlevel'),
       minimap: q('.minimap'), north: q('.mm-n'), toasts: q('.v-toasts'), prompt: q('.prompt'),
@@ -53,6 +54,8 @@ class View {
     }
     this.dmgPool = []; this.dmgActive = [];
     for (let i = 0; i < 30; i++) { const d = el('div', 'dmg'); d.style.display = 'none'; this.$.dmg.appendChild(d); this.dmgPool.push(d); }
+    this.tagPool = [];
+    for (let i = 0; i < 18; i++) { const t = el('div', 'npc-tag', '<div class="bubble"></div><div class="tag"><i class="nico"></i><span></span></div>'); t.style.display = 'none'; this.$.npcs.appendChild(t); this.tagPool.push({ el: t, bubble: t.querySelector('.bubble'), tag: t.querySelector('.tag'), ico: t.querySelector('.nico'), name: t.querySelector('.tag span') }); }
     this.barPool = [];
     for (let i = 0; i < 22; i++) { const b = el('div', 'ebar', '<div class="ename"></div><div class="etrack"><div class="efill"></div></div>'); b.style.display = 'none'; this.$.bars.appendChild(b); this.barPool.push({ el: b, name: b.querySelector('.ename'), fill: b.querySelector('.efill') }); }
     this.last = {};
@@ -175,6 +178,9 @@ class View {
     if (p.suit) st.push(`<span style="--c:${p.suit.color}">${p.suit.kind[0].toUpperCase() + p.suit.kind.slice(1)} Suit ${Math.ceil(p.suit.dur - p.suit.t)}s</span>`);
     if (p.shieldT > 0) st.push(`<span style="--c:#ffd34a">Shield ${Math.ceil(p.shieldT)}s</span>`);
     if (p.secondChanceT > 0) st.push(`<span style="--c:#7fffd4">2nd Chance</span>`);
+    // helper boosts: small icons with timers
+    const B = p.buffs || {};
+    for (const k in BUFFS) { const v = B[k]; if (!(v > 0)) continue; const d = BUFFS[k]; st.push(`<span class="buff" style="--c:${d.color}">${d.icon}${d.hits ? `${d.name} x${v}` : `${Math.floor(v / 60)}:${String(Math.floor(v % 60)).padStart(2, "0")}`}</span>`); }
     if (p.dead && g.players.length > 1) st.push(`<span style="--c:#ff6a6a">Back in ${Math.max(0, Math.ceil(5 - p.deadT))}s</span>`);
     this.set('status', st.join(''), (v) => { this.$.status.innerHTML = v; });
     this.root.classList.toggle('low-hp', hpK < 0.25 && !g.mode.invincible && !p.dead);
@@ -206,6 +212,7 @@ class View {
     if (this.frame % 2 === 0) this.drawMinimap();
     this.updateMarker(g.objective(p));
     this.updateFloaters(dt);
+    this.updateTags();
   }
 
   project(pos) {
@@ -213,6 +220,36 @@ class View {
     if (v.z > 1) return null;
     return { x: (v.x * 0.5 + 0.5) * r.w, y: (-v.y * 0.5 + 0.5) * r.h, nx: v.x, ny: v.y };
   }
+  // name tags over helpers / buddies and speech bubbles of friendly people
+  updateTags() {
+    const g = this.game, p = this.player;
+    let n = 0;
+    const list = [...g.npcs.list, ...g.buddies.list, ...g.pets.list];
+    for (const c of list) {
+      if (n >= this.tagPool.length) break;
+      if (c.dead || !c.rig || !c.rig.root.visible) continue;
+      const d = Math.hypot(c.pos.x - p.pos.x, c.pos.z - p.pos.z);
+      const named = !!c.tagged;
+      if (d > (c.say ? 26 : 22) || (!named && !c.say)) continue;
+      const s = this.project((this.v2 || (this.v2 = new THREE.Vector3())).set(c.pos.x, c.pos.y + (c.height || 1.8) + 0.45, c.pos.z));
+      if (!s || s.nx < -1.1 || s.nx > 1.1 || s.ny < -1.1 || s.ny > 1.1) continue;
+      const t = this.tagPool[n++];
+      t.el.style.display = 'block';
+      t.el.style.transform = `translate(${s.x}px, ${s.y}px) translate(-50%, -100%)`;
+      const kind = c.owner ? (c.rig && g.pets.list.includes(c) ? 'pet' : 'buddy') : c.kind;
+      const cls = `npc-tag k-${kind}${c.owner ? (c.owner === p ? ' mine' : ' theirs') : ''}`;
+      const icon = c.owner && kind === 'buddy' ? (ICON[c.kind] || ICON.sword) : (ICON[kind] || '');
+      if (t.icon !== icon) { t.icon = icon; t.ico.innerHTML = icon; t.ico.style.display = icon ? '' : 'none'; }
+      if (t.cls !== cls) { t.cls = cls; t.el.className = cls; }
+      const nm = named ? c.name : '';
+      if (t.nm !== nm) { t.nm = nm; t.name.textContent = nm; t.tag.style.display = nm ? '' : 'none'; }
+      const say = c.say || '';
+      if (t.say !== say) { t.say = say; t.bubble.textContent = say; t.bubble.style.display = say ? '' : 'none'; }
+      t.el.style.opacity = d > 16 ? clamp(1 - (d - 16) / 8, 0.2, 1) : 1;
+    }
+    for (let i = n; i < this.tagPool.length; i++) { const t = this.tagPool[i]; if (t.el.style.display !== 'none') t.el.style.display = 'none'; }
+  }
+  pulseMarker() { const m = this.$.marker; m.classList.remove('pulse'); void m.offsetWidth; m.classList.add('pulse'); }
   updateMarker(obj) {
     const g = this.game, m = this.$.marker, p = this.player;
     if (!obj || !obj.pos || g.paused) { m.classList.add('hidden'); return; }
@@ -351,6 +388,7 @@ export class HUD {
           <div class="coins">${img(coinIcon(), 'ico')}<span></span></div>
           <div class="pot hp">${img(potionIcon(POTIONS[0]), 'ico')}<span></span></div>
           <div class="pot mana">${img(potionIcon(POTIONS[2]), 'ico')}<span></span></div>
+          <div class="bag"></div>
           <div class="keys"></div>
         </div>
       </div>
@@ -365,7 +403,7 @@ export class HUD {
     this.$ = {
       boss: q('.boss-bar'), bossName: q('.boss-name'), bossFill: q('.bar.boss .fill'), bossGhost: q('.bar.boss .ghost'), bossEnrage: q('.boss-enrage'),
       objective: q('.objective'), objText: q('.obj-text'), objArrow: q('.obj-arrow'),
-      coins: q('.coins span'), potHp: q('.pot.hp span'), potMp: q('.pot.mana span'), keys: q('.keys'), split: q('.split-line'),
+      coins: q('.coins span'), potHp: q('.pot.hp span'), potMp: q('.pot.mana span'), bag: q('.bag'), keys: q('.keys'), split: q('.split-line'),
       toasts: q('.toasts'), banner: q('.banner'), bannerTitle: q('.banner-title'), bannerSub: q('.banner-sub'),
       hint: q('.hint'), help: q('.help'), fade: q('.fade-black'), count: q('.trial-count'), modeBadge: q('.mode-badge'),
     };
@@ -385,12 +423,15 @@ export class HUD {
     this.root.classList.toggle('two', players.length > 1);
     this.$.split.classList.toggle('hidden', players.length < 2);
     // always show which mode this is (Creative = can't be hurt), so it's never confusing
-    const m = this.game.mode;
-    if (m) {
-      this.$.modeBadge.className = 'mode-badge mode-' + m.id;
-      this.$.modeBadge.textContent = m.invincible ? `${m.name} - can't get hurt` : m.name;
-    }
+    this.refreshBadge();
     this.buildHelp();
+  }
+  // "QUEST · EASY" (Creative: can't get hurt)
+  refreshBadge() {
+    const m = this.game.mode;
+    if (!m) return;
+    this.$.modeBadge.className = 'mode-badge mode-' + m.id;
+    this.$.modeBadge.textContent = m.invincible ? `${m.name} - can't get hurt` : `${m.name} · ${this.game.diff.name}`;
   }
   viewOf(p) { return this.views.find((v) => v.player === p) || this.views[0]; }
 
@@ -447,6 +488,8 @@ export class HUD {
     if (L.shop) out.push({ x: L.shop.pos.x, z: L.shop.pos.z, kind: 'shop', important: true });
     if (L.bed) out.push({ x: L.bed.pos.x, z: L.bed.pos.z, kind: 'bed', important: true });
     if (L.bossArena && !g.state.bosses[g.worldId]) out.push({ x: L.bossArena.pos.x, z: L.bossArena.pos.z, kind: 'arena', important: true });
+    // the Map Maker's map: bandit camps too
+    if (g.state.mapped && g.state.mapped[String(g.worldId)]) (g.world.banditCamps || []).forEach((c) => out.push({ x: c.pos.x, z: c.pos.z, kind: 'camp', important: true }));
     g.fx.pickups.forEach((pk) => { if (pk.type === 'key') out.push({ x: pk.pos.x, z: pk.pos.z, kind: 'key', color: pk.color, important: true }); });
     return out;
   }
@@ -477,6 +520,10 @@ export class HUD {
         ctx.fillStyle = '#ffd34a'; ctx.beginPath();
         for (let k = 0; k < 10; k++) { const r = k % 2 ? 2.4 : 5.5, a = k / 10 * Math.PI * 2 - Math.PI / 2; k ? ctx.lineTo(Math.cos(a) * r, Math.sin(a) * r) : ctx.moveTo(Math.cos(a) * r, Math.sin(a) * r); }
         ctx.closePath(); ctx.fill(); ctx.strokeStyle = 'rgba(0,0,0,0.7)'; ctx.lineWidth = 1; ctx.stroke();
+        break;
+      case 'camp':   // a bandit camp: an orange tent
+        ctx.fillStyle = '#ff9a3a'; ctx.beginPath(); ctx.moveTo(0, -7); ctx.lineTo(8, 6); ctx.lineTo(-8, 6); ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#5a2a0a'; ctx.beginPath(); ctx.moveTo(0, -1); ctx.lineTo(3, 6); ctx.lineTo(-3, 6); ctx.closePath(); ctx.fill();
         break;
       case 'key':
         ctx.strokeStyle = '#ffd34a'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(-3, -3, 4, 0, Math.PI * 2); ctx.moveTo(0, 0); ctx.lineTo(7, 7); ctx.stroke();
@@ -532,6 +579,7 @@ export class HUD {
   refreshHotbar() { this.views.forEach((v) => { v.barKey = null; }); }
   pulseSlot(p, m) { this.viewOf(p).pulse(m); }
   pulseSuper(p) { this.viewOf(p).pulseSuper(); }
+  pulseMarker(p) { this.viewOf(p).pulseMarker(); }
   setBoss(e) {
     if (e === this.boss) return;
     this.boss = e;
@@ -577,13 +625,20 @@ export class HUD {
     this.set('coins', s.coins, (v) => { this.$.coins.textContent = fmt(v); });
     this.set('potHp', s.potions.hp + s.potions.hp_big, (v) => { this.$.potHp.textContent = v; });
     this.set('potMp', s.potions.mana, (v) => { this.$.potMp.textContent = v; });
+    // the bag: crops from a Farmer + food from a Cook (only what you have)
+    const bag = s.bag || {};
+    const BAG_IDS = [...CROPS.map((c) => c.id), ...RECIPES.map((r) => r.food)];
+    this.set('bag', BAG_IDS.map((k) => bag[k] || 0).join(','), () => {
+      this.$.bag.innerHTML = BAG_IDS.filter((k) => bag[k] > 0).map((k) => `<div class="pot bagi" title="${(CROPS.find((c) => c.id === k) || RECIPES.find((r) => r.food === k)).name}">${img(bagIcon(k), 'ico')}<span>${bag[k]}</span></div>`).join('');
+    });
     this.set('keys', s.keys.join(''), () => {
       this.$.keys.innerHTML = s.keys.map((has, i) => (has ? `<span class="key-chip" title="Key to ${DIMENSIONS[i].name}">${KEY_SVG(POWERS[i].color)}<small>${DIMENSIONS[i].name}</small></span>` : '')).join('');
     });
     // goal: one line + an arrow (for player 1's view direction)
     const p = g.player;
     const obj = g.objective(p);
-    this.set('obj', obj ? obj.text : '', (v) => { this.$.objText.innerHTML = v; this.$.objective.classList.toggle('hidden', !v); });
+    const side = g.npcs.questText();   // a side quest from a Quest Giver: a second goal line
+    this.set('obj', (obj ? obj.text : '') + '|' + side, () => { const t = obj ? obj.text : ''; this.$.objText.innerHTML = t + (side ? `<div class="obj-side">${side}</div>` : ''); this.$.objective.classList.toggle('hidden', !t && !side); });
     if (obj && obj.pos && g.players.length === 1) {
       const a = Math.atan2(obj.pos.x - p.pos.x, obj.pos.z - p.pos.z) - p.cam.yaw;
       this.$.objArrow.style.display = '';

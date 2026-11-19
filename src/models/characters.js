@@ -4,7 +4,10 @@ import * as THREE from 'three';
 import { SWORDS, ARMORS } from '../data.js';
 import { Builder, atlasMaterial, rng, hashStr, shade, mixc, col, hexOf } from './rigkit.js';
 import { humanDims, humanBones, addBody, addArmor, swordGeometry, SWORD_LENGTH } from './human.js';
-import { HumanRig } from './humanAnim.js';
+import { HumanRig, fistKit } from './humanAnim.js';
+import { CHARACTERS } from '../data.js';
+import { friendlySpec, applyFriendly, FRIENDLY_KINDS } from './friendly.js';
+export { FRIENDLY_KINDS };
 
 const TPL = new Map();      // template cache: key -> { bones, geos, ... }
 const SWORD_GEO = new Map(); // sword geometry cache
@@ -17,8 +20,10 @@ function getTemplate(key, D, L, armor, q) {
   if (!t) {
     const B = new Builder({ seed: hashStr(key) });
     humanBones(B, D, { cape: !!L.cape, tail: L.hairStyle === 'ponytail' || L.hairStyle === 'braid' });
+    if (L.extraBones) L.extraBones(B, D);
     addBody(B, D, L, q);
     addArmor(B, D, L, armor, q);
+    if (L.props) L.props(B, D, L, q);
     t = B.build();
     TPL.set(k, t);
   }
@@ -39,10 +44,42 @@ class CharacterRig extends HumanRig {
     this._key = key; this._L = L; this._q = q;
     this.armor = opts.armor || ARMORS[0];
     this.swordScale = opts.swordScale || 1;
+    // strike points for trails while fighting with fists (left fist, right fist, right foot)
+    const s = D.s, mk = (parent, x, y, z, n) => { const o = new THREE.Object3D(); o.name = n; o.position.set(x * s, y * s, z * s); parent.add(o); return o; };
+    this._tips = { L: mk(this.handL, -0.02, -0.1, 0.01, 'fistL'), R: mk(this.handR, 0.02, -0.1, 0.01, 'fistR'), F: mk(this.inst.bone.footR, 0, -0.06, 0.14, 'toeR') };
+    this.fightStyle = 'sword'; this._swordTipObj = null; this.calmIdle = false;
+    this.FK = fistKit(this.J, D);
+    const base = this.anim.poses, FK = this.FK, rig = this;
+    this.anim.poses = { ...base, idle: (P, t, c) => { base.idle(P, t, c); if (c.fists && !rig.calmIdle) { FK.ready(P, 1, 0.012 * Math.abs(Math.sin(t * 3.2))); FK.guard(P); } } };
+  }
+  // 'sword' (default) or 'fists': fists hide the sword, idle in a fighting stance, punch & kick
+  setFightStyle(style) {
+    this.fightStyle = style === 'fists' ? 'fists' : 'sword';
+    this.ctx.fists = this.fightStyle === 'fists';
+    this.ctx.armed = !this.ctx.fists && !!this.sword;
+    this._syncSword();
+    this.swordTip = this.ctx.fists ? this._tips.R : this._swordTipObj;
+  }
+  _syncSword() { if (this.sword) this.sword.visible = !this.ctx.fists && this.ctx.pose !== 'sleep' && this.ctx.pose !== 'swim'; }
+  setPose(name) { super.setPose(name); this._syncSword(); }
+  attack(combo = 0) {
+    if (!this.ctx.fists) return super.attack(combo);
+    const a = combo === 1 ? this.FK.cross() : combo === 2 ? this.FK.roundhouse() : this.FK.jab();
+    this.swordTip = this._tips[a.tip] || this._tips.R;
+    const sp = this.attackSpeed, out = { duration: a.dur / sp, hitTime: a.hit / sp };
+    this._play(a, sp); // (_play rescales the action's own keys)
+    return out;
+  }
+  flyingKick() {
+    const a = this.FK.flyingKick();
+    if (this.ctx.fists) this.swordTip = this._tips.F;
+    const sp = this.attackSpeed, out = { duration: a.dur / sp, hitTime: a.hit / sp };
+    this._play(a, sp); // (_play rescales the action's own keys)
+    return out;
   }
   setSword(def) {
-    if (this.sword) { this.sword.removeFromParent(); this.sword = null; this.swordTip = null; }
-    this.ctx.armed = !!def;
+    if (this.sword) { this.sword.removeFromParent(); this.sword = null; this._swordTipObj = null; if (!this.ctx.fists) this.swordTip = null; }
+    this.ctx.armed = !!def && !this.ctx.fists;
     if (!def) return;
     const m = new THREE.Mesh(getSwordGeo(def, this._q), this.material);
     m.castShadow = true; m.receiveShadow = false;
@@ -54,8 +91,9 @@ class CharacterRig extends HumanRig {
     const tip = new THREE.Object3D(); tip.name = 'swordTip';
     tip.position.set(0, 0, SWORD_LENGTH(def));
     m.add(tip);
-    this.sword = m; this.swordTip = tip; this.swordDef = def;
-    m.visible = this.ctx.pose !== 'sleep' && this.ctx.pose !== 'swim';
+    this.sword = m; this._swordTipObj = tip; this.swordDef = def;
+    if (!this.ctx.fists) this.swordTip = tip;
+    this._syncSword();
   }
   setArmor(def) {
     def = def || ARMORS[0];
@@ -77,6 +115,7 @@ const HERO_STYLE = {
   rex: (k) => ({ eyes: EYES.brown, sleeves: 'none', pelt: '#8f8a84', beard: 'big', bottom: '#4a3422', boots: '#3a2a1c', beltColor: '#2a1a10', buckle: '#9b9b9b', gloves: null, height: 1.86, wide: 1.1, armR: 1.18, collar: k.outfit }),
   nova: (k) => ({ eyes: EYES.dark, bottom: k.outfit, trim: k.accent, collar: k.accent, cuff: k.accent, gloves: '#ececec', boots: '#e8e8e8', beltColor: '#3a3a40', buckle: '#d0d0d0', goggles: true, bootTop: 0.4, tie: k.accent, topCell: 'cloth' }),
   ivy: (k) => ({ eyes: EYES.green, skirt: 0.4, flare: 0.4, crown: 'leaf', flower: k.accent, tie: k.accent, cape: shade(k.outfit, 0.7), trim: shade(k.outfit, 0.6), boots: '#4a3a24', bottom: '#4a5a30', collar: shade(k.outfit, 0.7) }),
+  kai: (k) => ({ eyes: EYES.dark, height: 1.8, wide: 1.08, armR: 1.12, legR: 1.15 }),
   zane: (k) => ({ eyes: EYES.violet, eyeGlow: 0.25, scarf: k.accent, scarfMask: true, cape: '#1a1428', bottom: '#1c1626', gloves: '#1a1420', boots: '#1a1420', collar: k.accent, noCollar: true }),
 };
 function heroLook(def) {
@@ -90,6 +129,11 @@ function heroLook(def) {
     leather: '#5a3a24',
     ...style,
   };
+  if (k.outfitStyle === 'gi') Object.assign(L, {
+    gi: true, bottom: k.outfit || '#f4f1ea', sleeveColor: k.outfit || '#f4f1ea', sleeves: 'long', beltColor: k.accent || '#151515', buckle: k.accent || '#151515',
+    pouch: false, gloves: null, boots: k.skin || '#d9a47c', bootTop: 0.1, noCollar: true, cuff: k.outfit || '#f4f1ea', topCell: 'cloth', bottomCell: 'cloth',
+  });
+  if (k.headband) L.headband = k.headband;
   if (k.cape === false) L.cape = null;
   else if (k.cape && !L.cape) L.cape = shade(L.top, 0.7);
   if (L.cape) L.cape = hexOf(L.cape);
@@ -100,10 +144,11 @@ function heroLook(def) {
 
 export function createHero(characterDef, { quality = 'high' } = {}) {
   const L = heroLook(characterDef);
-  const D = humanDims(L.height, L.build, { wide: L.wide, arm: L.armR });
+  const D = humanDims(L.height, L.build, { wide: L.wide, arm: L.armR, leg: L.legR });
   const q = qf(quality);
   const rig = new CharacterRig('hero:' + characterDef.id + ':' + q, D, L, q, { attackSpeed: characterDef.stats?.attackSpeed || 1 });
   rig.kind = 'hero'; rig.id = characterDef.id;
+  rig.setFightStyle(characterDef.fightStyle || 'sword');
   return rig;
 }
 
@@ -164,6 +209,29 @@ function npcLook(kind, outfit, seed) {
 
 export function createNPC(kind = 'villager', { outfit, seed = 1, quality = 'high' } = {}) {
   const q = qf(quality);
+  if (kind === 'sensei') { // the Dojo Master: Kai's look as a calm NPC (bows, then a meditation stance)
+    const kai = CHARACTERS.find((ch) => ch.id === 'kai') || { id: 'kai', look: { skin: '#d9a47c', hair: '#1a1a1a', hairStyle: 'short', outfit: '#f4f1ea', accent: '#151515', cape: false, build: 'broad', outfitStyle: 'gi', headband: '#c4242b' } };
+    const L = heroLook({ ...kai, look: { ...kai.look, outfit: outfit || kai.look.outfit } });
+    const D = humanDims(L.height, L.build, { wide: L.wide, arm: L.armR, leg: L.legR });
+    const fq = q * 0.85;
+    const rig = new CharacterRig('npc:sensei:' + (outfit || '') + ':' + fq, D, L, fq, {});
+    rig.kind = 'sensei'; rig.friendly = true; rig.calmIdle = true;
+    rig.setFightStyle('fists');
+    applyFriendly(rig, { idle: 'sensei' });
+    return rig;
+  }
+  const fs = friendlySpec(kind, outfit, seed);
+  if (fs) { // friendly people (healer, guide, smith, ... see friendly.js)
+    const fq = q * 0.8;
+    const D = humanDims(fs.height, fs.build, { wide: fs.wide, arm: fs.armR });
+    const key = 'friend:' + kind + ':' + (outfit || '') + ':' + seed + ':' + fq;
+    const rig = new CharacterRig(key, D, fs.L, fq, { armor: fs.armor });
+    rig.kind = kind; rig.friendly = true;
+    if (fs.child) rig.height = 1.32;
+    if (fs.sword != null) rig.setSword(SWORDS[fs.sword]);
+    applyFriendly(rig, fs);
+    return rig;
+  }
   let L = npcLook(kind, outfit, seed);
   for (const k of ['hood', 'bandana', 'cape', 'top', 'accent', 'bottom', 'collar']) if (L[k] && typeof L[k] !== 'string') L[k] = hexOf(L[k]);
   const D = humanDims(L.height, L.build, { wide: L.wide, arm: L.armR });
