@@ -204,7 +204,7 @@ export const CONTROLS = {
     forward: ['KeyW'], back: ['KeyS'], left: ['KeyA'], right: ['KeyD'],
     jump: ['Space'], down: ['ShiftLeft'],          // down = fly down in Creative
     sword: ['KeyF'], power: ['KeyG'], nextMove: ['KeyR'], nextPower: ['KeyT'],
-    use: ['KeyE'], hero: ['KeyQ'], build: ['KeyB'],
+    use: ['KeyE'], hero: ['KeyQ'], build: ['KeyB'], view: ['KeyV'],   // view = first person / third person
     moves: ['Digit1', 'Digit2', 'Digit3', 'Digit4', 'Digit5', 'Digit6', 'Digit7', 'Digit8', 'Digit9'],
   },
   p1SoloExtra: { forward: ['ArrowUp'], back: ['ArrowDown'], left: ['ArrowLeft'], right: ['ArrowRight'] },  // only when playing alone
@@ -213,7 +213,7 @@ export const CONTROLS = {
     forward: ['ArrowUp'], back: ['ArrowDown'], left: ['ArrowLeft'], right: ['ArrowRight'],
     jump: ['KeyL'], down: ['ShiftRight'],
     sword: ['KeyJ'], power: ['KeyK'], nextMove: ['KeyI'], nextPower: ['KeyO'],
-    use: ['KeyU'], hero: ['KeyP'], build: ['KeyN'],
+    use: ['KeyU'], hero: ['KeyP'], build: ['KeyN'], view: ['Semicolon'],
     moves: [],
   },
   shared: { pause: ['Escape'], map: ['KeyM'], help: ['Alt+F5'] },   // keys card: only Alt + F5 (handled in game.js onKey)

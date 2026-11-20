@@ -2,7 +2,7 @@
 // (and, for player 1 playing alone, the arrow keys and the optional mouse).
 import { CONTROLS } from '../data.js';
 
-const ACTIONS = ['forward', 'back', 'left', 'right', 'jump', 'down', 'sword', 'power', 'nextMove', 'nextPower', 'use', 'hero', 'build', 'moves'];
+const ACTIONS = ['forward', 'back', 'left', 'right', 'jump', 'down', 'sword', 'power', 'nextMove', 'nextPower', 'use', 'hero', 'build', 'view', 'moves'];
 
 export function keysetFor(playerIndex, players) {
   const base = playerIndex === 0 ? CONTROLS.p1 : CONTROLS.p2;
@@ -20,7 +20,7 @@ export function keyName(code) {
   if (!code) return '';
   if (code.startsWith('Key')) return code.slice(3);
   if (code.startsWith('Digit')) return code.slice(5);
-  const map = { Space: 'Space', ShiftLeft: 'Left Shift', ShiftRight: 'Right Shift', ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right', Escape: 'Esc', Slash: '/', Enter: 'Enter' };
+  const map = { Space: 'Space', ShiftLeft: 'Left Shift', ShiftRight: 'Right Shift', ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right', Escape: 'Esc', Slash: '/', Semicolon: ';', Enter: 'Enter' };
   return map[code] || code;
 }
 

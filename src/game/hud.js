@@ -208,7 +208,7 @@ class View {
     this.vig = Math.max(0, this.vig - dt * 1.5);
     this.$.vig.style.opacity = this.vig;
     this.$.dark.style.opacity = clamp(p.fadeT / 1.5, 0, 1) * 0.6;
-    this.$.crosshair.classList.toggle('hidden', !(p.index === 0 && g.input.locked));
+    this.$.crosshair.classList.toggle('hidden', !((p.index === 0 && g.input.locked) || p.cam.fp));
     if (this.frame % 2 === 0) this.drawMinimap();
     this.updateMarker(g.objective(p));
     this.updateFloaters(dt);
@@ -601,6 +601,7 @@ export class HUD {
         <div><b>${k('nextPower')}</b> next power</div>
         <div><b>${k('use')}</b> use / talk / sleep / key</div>
         <div><b>${k('hero')}</b> pick a hero</div>
+        <div><b>${k('view')}</b> first person / third person</div>
         <div class="creative-only"><b>Hold ${k('jump')}</b> fly up, <b>${k('down')}</b> down</div>
         <div class="creative-only"><b>${k('build')}</b> build blocks</div>
       </div></div>`;

@@ -8,6 +8,7 @@ import { loadModules, buildWorld, using, createHero } from './modules.js';
 import { Input } from './input.js';
 import { loadSettings, saveSettings, newGameState, loadGame, saveGame } from './save.js';
 import { CameraController } from './camera.js';
+import { FirstPerson } from './firstperson.js';
 import { Player } from './player.js';
 import { FX } from './fx.js';
 import { Combat } from './combat.js';
@@ -87,6 +88,7 @@ export class Game {
     this.npcs = new NPCs(this);
     this.buddies = new Buddies(this);
     this.pets = new Pets(this);
+    this.firstPerson = new FirstPerson(this);
 
     // warm lights that follow the players at night (fixed count so materials never recompile)
     this.nightLights = [new THREE.PointLight('#ffb070', 0, 18, 1.6), new THREE.PointLight('#ffb070', 0, 18, 1.6)];
@@ -1072,6 +1074,7 @@ export class Game {
     if (slot >= 0) this.selectMove(p, slot);
     if (ctl.hit('use')) this.interact(p);
     if (ctl.hit('hero')) this.ui.open('switcher', null, p);
+    if (ctl.hit('view')) this.firstPerson.toggle(p);
     if (ctl.hit('build')) {
       if (this.mode.building) {
         if (this.building && this.blocks.builder !== p) this.blocks.builder = p;
@@ -1112,7 +1115,13 @@ export class Game {
   }
   render() {
     const r = this.renderer;
-    if (this.phase !== 'play' || this.players.length < 2) { r.setScissorTest(false); r.render(this.scene, this.camera); return; }
+    if (this.phase !== 'play' || this.players.length < 2) {
+      r.setScissorTest(false);
+      this.firstPerson.beforeRender(0);
+      r.render(this.scene, this.camera);
+      this.firstPerson.afterRender();
+      return;
+    }
     // split screen: the shadow map is drawn once and reused for the second view
     const W = window.innerWidth, H = window.innerHeight;
     r.setScissorTest(true);
@@ -1121,7 +1130,9 @@ export class Game {
       r.setScissor(i * W / 2, 0, W / 2, H);
       r.shadowMap.needsUpdate = i === 0;
       r.shadowMap.autoUpdate = i === 0;
+      this.firstPerson.beforeRender(i);
       r.render(this.scene, p.view.camera);
+      this.firstPerson.afterRender();
     });
     r.shadowMap.autoUpdate = true;
     r.setScissorTest(false);
@@ -1153,7 +1164,11 @@ export class Game {
       }
       if (m.wheel) {
         if (this.building && this.blocks.builder === P) this.selectBlock(this.blocks.selected + m.wheel);
-        else P.cam.zoom(m.wheel);
+        else {
+          const was = P.cam.firstPerson;
+          P.cam.zoom(m.wheel);
+          if (P.cam.firstPerson !== was) this.firstPerson.announce(P);
+        }
       }
       for (const p of this.players) {
         if (this.canControl(p)) this.playerActions(p, p.ctl, rawDt);
@@ -1166,8 +1181,10 @@ export class Game {
       this.mouseLookT = Math.max(0, (this.mouseLookT || 0) - rawDt);
       for (const p of this.players) {
         if (p.cam.orbit) continue;
-        p.cam.yaw = angleDamp(p.cam.yaw, p.yaw, 5, rawDt);
-        if (p.index > 0 || this.mouseLookT <= 0) p.cam.pitch = damp(p.cam.pitch, -0.26, 2, rawDt);
+        p.cam.fpSuspend = !!(p.dead || p.sleeping);
+        const fp = p.cam.fp;   // first person: the view turns with the hero right away, looking ahead (not down)
+        p.cam.yaw = angleDamp(p.cam.yaw, p.yaw, fp ? 20 : 5, rawDt);
+        if (p.index > 0 || this.mouseLookT <= 0) p.cam.pitch = damp(p.cam.pitch, fp ? -0.1 : -0.26, 2, rawDt);
       }
     }
     // food from the Cook is eaten by itself below half health (before any potion)
@@ -1231,7 +1248,12 @@ export class Game {
       }
       // sword trail (player 1)
       const tip = P.rig && P.rig.swordTip;
-      if (tip && P.rig.handR) {
+      const fpFrom = new THREE.Vector3(), fpTo = new THREE.Vector3();
+      if (this.firstPerson.active(P) && (P.fists || this.firstPerson.trail(P, fpFrom, fpTo))) {
+        // first person: the streak follows the sword in front of the eyes (fists: no streak)
+        const a = P.attack;
+        this.fx.trail.update(dt, !P.fists && !!a && a.t > a.hit * 0.4 && a.t < a.dur * 0.85, fpFrom, fpTo);
+      } else if (tip && P.rig.handR) {
         const a = P.attack;
         const emitting = !!a && a.t > a.hit * 0.4 && a.t < a.dur * 0.85;
         const tp = tip.getWorldPosition(new THREE.Vector3());
@@ -1254,6 +1276,7 @@ export class Game {
       p.cam.update(rawDt, p.pos, p.height, this.world, ground);
       if (this.cinematic && p.cam.orbit && !this.ui.overlay) p.cam.orbit.center.copy(p.pos);
     }
+    this.firstPerson.update(rawDt);
     const mid = this.players.length > 1 ? P.pos.clone().lerp(this.players[1].pos, 0.5) : P.pos;
     this.world.setTimeOfDay(this.timeOfDay);
     this.world.update(rawDt, this.time, mid, this.camera);

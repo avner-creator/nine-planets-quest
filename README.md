@@ -22,6 +22,7 @@ Travel through 9 portals to 9 worlds, beat the temple guardians to win power cry
 | Next move / next element | R / T | I / O |
 | Use / talk / sleep / key | E | U |
 | Pick a hero | Q | P |
+| First person / third person | V (or scroll the mouse wheel in) | ; |
 
 **M** map · **Esc** pause · **Alt + F5** show all the keys
 

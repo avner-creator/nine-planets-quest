@@ -22,6 +22,8 @@ export class CameraController {
     this._p = new THREE.Vector3();
     this.initialized = false;
   }
+  // first person is really used (not while a cinematic orbits, or while the hero sleeps / is knocked out)
+  get fp() { return this.firstPerson && !this.orbit && !this.fpSuspend; }
   get forward() { return new THREE.Vector3(Math.sin(this.yaw), 0, Math.cos(this.yaw)); }
   aimDir(out = new THREE.Vector3()) {
     return out.set(Math.sin(this.yaw) * Math.cos(this.pitch), Math.sin(this.pitch), Math.cos(this.yaw) * Math.cos(this.pitch)).normalize();
@@ -30,7 +32,10 @@ export class CameraController {
     this.yaw -= dx;
     this.pitch = clamp(this.pitch - dy, -1.35, 1.2);
   }
+  // wheel: zooming in past the closest view goes into first person, zooming out comes back
   zoom(steps) {
+    if (this.firstPerson) { if (steps > 0) { this.firstPerson = false; this.wantDist = 2.2; } return; }
+    if (steps < 0 && this.wantDist <= 2.2 + 1e-6) { this.firstPerson = true; return; }
     this.wantDist = clamp(this.wantDist + steps * 0.8, 2.2, 14);
   }
   shake(a) { this.shakeAmt = Math.min(1.2, this.shakeAmt + a); }
@@ -59,9 +64,11 @@ export class CameraController {
     this.smoothTarget.z = damp(this.smoothTarget.z, this.target.z, 30, dt);
     this.smoothTarget.y = damp(this.smoothTarget.y, this.target.y, 14, dt);
     const dir = this.aimDir(this._dir);
-    if (this.firstPerson) {
-      cam.position.set(playerPos.x, playerPos.y + playerHeight * 0.93, playerPos.z);
-      cam.position.y = lerp(cam.position.y, this.smoothTarget.y + playerHeight * 0.03, 0.5);
+    if (this.fp) {
+      // eyes: a little in front of the head so the view never sees the inside of the hero
+      cam.position.set(playerPos.x + Math.sin(this.yaw) * 0.12, this.smoothTarget.y + playerHeight * 0.03, playerPos.z + Math.cos(this.yaw) * 0.12);
+      if (world && world.liquid && world.liquid.type !== 'ice' && Math.abs(cam.position.y - world.liquid.level) < 0.2) cam.position.y = world.liquid.level + 0.2;
+      this.curDist = this.wantDist;
       this.lookAt.copy(cam.position).add(dir);
       cam.lookAt(this.lookAt);
     } else {
