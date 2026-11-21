@@ -194,7 +194,7 @@ export class Game {
     if (!this.players[0]) { const p = new Player(this, 0); p.view = this.views[0]; this.players[0] = p; }
     if (n === 2 && !this.players[1]) { const p = new Player(this, 1); p.view = this.views[1]; this.players[1] = p; }
     if (n === 1 && this.players[1]) { this.players[1].removeRig(); this.players.length = 1; }
-    this.players[0].ctl = new Controls(this.input, keysetFor(0, n), { mouse: n === 1 });
+    this.players[0].ctl = new Controls(this.input, keysetFor(0, n), { mouse: true });   // 2 players: P1 can still click to swing
     if (this.players[1]) this.players[1].ctl = new Controls(this.input, keysetFor(1, 2), { mouse: false });
     if (n === 2) { this.input.exitLock(true); if (this.renderer.getPixelRatio() > 1) this.renderer.setPixelRatio(1); }
     this.hud.setPlayers(this.players);
@@ -979,7 +979,7 @@ export class Game {
     this.audio.unlock();
     if (this.phase !== 'play' || this.ui.overlay || this.twoPlayers) return;
     if (!this.input.locked && !this.input.lockFailed) {
-      this.input.requestLock(); this.ignoreClick = true;
+      this.input.requestLock();   // this click also swings the sword (it used to only grab the mouse)
       if (!this.state.hints.mouse) { this.state.hints.mouse = true; this.hud.toast('Mouse on! Move it to turn. Left click = sword, right click = power. Esc frees the mouse.', 'info', 4); }
     }
   }

@@ -17,8 +17,8 @@ Travel through 9 portals to 9 worlds, beat the temple guardians to win power cry
 |---|---|---|
 | Walk / turn | W A S D (arrow keys too when playing alone) | Arrow keys |
 | Jump | Space | L |
-| Sword | F | J |
-| Power (hold for SUPER) | G | K |
+| Sword | F (or left click) | J or Enter |
+| Power (hold for SUPER) | G (or right click) | K |
 | Next move / next element | R / T | I / O |
 | Use / talk / sleep / key | E | U |
 | Pick a hero | Q | P |

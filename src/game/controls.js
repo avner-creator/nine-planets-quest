@@ -39,8 +39,9 @@ export class Controls {
   // turning: +1 = left, -1 = right
   turn() { return (this.down('left') ? 1 : 0) - (this.down('right') ? 1 : 0); }
   move() { return (this.down('forward') ? 1 : 0) - (this.down('back') ? 1 : 0); }
-  // optional mouse (player 1 only, playing alone): works once the pointer is locked
-  get mouseReady() { return this.useMouse && (this.input.locked || this.input.lockFailed); }
+  // optional mouse (player 1): clicking the game always swings / casts, even when the browser
+  // does not hand over the mouse pointer (turning with the mouse still needs the pointer, playing alone)
+  get mouseReady() { return this.useMouse; }
   mouseClick(button) { return this.mouseReady && this.input.mouse.clicked.has(button); }
   mouseHeld(button) { return this.mouseReady && this.input.mouse.buttons.has(button); }
 }

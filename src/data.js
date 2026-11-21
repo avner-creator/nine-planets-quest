@@ -212,7 +212,7 @@ export const CONTROLS = {
     label: 'Player 2',
     forward: ['ArrowUp'], back: ['ArrowDown'], left: ['ArrowLeft'], right: ['ArrowRight'],
     jump: ['KeyL'], down: ['ShiftRight'],
-    sword: ['KeyJ'], power: ['KeyK'], nextMove: ['KeyI'], nextPower: ['KeyO'],
+    sword: ['KeyJ', 'Enter'], power: ['KeyK'], nextMove: ['KeyI'], nextPower: ['KeyO'],   // Enter = sword too (next to the arrows)
     use: ['KeyU'], hero: ['KeyP'], build: ['KeyN'], view: ['Semicolon'],
     moves: [],
   },

@@ -609,7 +609,7 @@ export class HUD {
     const two = g.players && g.players.length > 1;
     const p1 = g.players && g.players[0] && g.players[0].ctl ? g.players[0].ctl.keys : CONTROLS.p1;
     this.$.help.innerHTML = `<div class="help-cols">${card(p1, two ? 'Player 1' : 'Keys')}${two ? card(g.players[1].ctl.keys, 'Player 2') : ''}</div>
-      <div class="help-foot"><b>M</b> map &nbsp; <b>Esc</b> pause &nbsp; <b>Alt + F5</b> hide this card${two ? '' : ' &nbsp; <span class="dim">Mouse optional: click the game</span>'}</div>`;
+      <div class="help-foot"><b>M</b> map &nbsp; <b>Esc</b> pause &nbsp; <b>Alt + F5</b> hide this card &nbsp; <span class="dim">${two ? 'Player 1 can also click: left = sword, right = power' : 'Mouse optional: left click = sword, right click = power'}</span></div>`;
     this.$.help.classList.toggle('creative', g.mode && g.mode.id === 'creative');
   }
   toggleHelp(force) {
